@@ -7,14 +7,12 @@
 struct gameOffsets {
     DWORD dwEntityList = 0x4D5AE4;
     DWORD dwForceJump = 0x4F5D24;
-    DWORD fFlags = 0x350;
 } offsets;
 
 struct values {
-    DWORD localPlayer;
+    PlayerBase* localPlayer;
     DWORD moduleBase;
-    BYTE flag;
-} val;
+} shared;
 
 void console() {
     FILE *pFile = nullptr;
@@ -22,11 +20,12 @@ void console() {
     SetConsoleTitle("Nikooo777's H4X!337");
     freopen_s(&pFile, "CONOUT$", "w", stdout);
     std::cout << "injected Nikooo777!" << std::endl;
-    while (val.localPlayer == NULL) {
+    while (shared.localPlayer == nullptr) {
         Sleep(10);
     }
-    std::cout << "moduleBase: 0x" << std::hex << val.moduleBase<< std::endl;
-    std::cout << "localPlayer: 0x" << std::hex << val.localPlayer<<" (0x"<< val.moduleBase<<"+0x"<<offsets.dwEntityList <<")"<< std::endl;
+    std::cout << "moduleBase: 0x" << std::hex << shared.moduleBase<< std::endl;
+    std::cout << "entityListOffset: 0x" << std::hex << offsets.dwEntityList<< std::endl;
+    std::cout << "forceJumpOffset: 0x" << std::hex << offsets.dwForceJump<< std::endl;
 
     while (!GetAsyncKeyState(VK_END)) {
         if (GetAsyncKeyState(VK_INSERT) & 1) {
@@ -42,19 +41,17 @@ void console() {
 
 DWORD __stdcall bHop(void *pParam) {
     std::thread t1(console);
-    val.moduleBase = reinterpret_cast<DWORD>(GetModuleHandleA("client.dll"));
-    while (val.localPlayer == NULL) {
-        val.localPlayer = *(DWORD *) (val.moduleBase + offsets.dwEntityList);
+    shared.moduleBase = reinterpret_cast<DWORD>(GetModuleHandleA("client.dll"));
+    while (shared.localPlayer == nullptr) {
+        shared.localPlayer = *(PlayerBase**)(shared.moduleBase + offsets.dwEntityList);
     }
-    auto* myself = *(PlayerBase**)(val.moduleBase + offsets.dwEntityList);
     while (!GetAsyncKeyState(VK_END)) {
         if (GetAsyncKeyState(VK_SPACE) & SPACE_DOWN) {
-            val.flag = myself->m_iFlags;
             uintptr_t buffer = 4;
-            if (val.flag & 1) {
+            if (shared.localPlayer->m_iFlags & FL_ONGROUND) {
                 buffer = 5;
             }
-            *(DWORD *) (val.moduleBase + offsets.dwForceJump) = buffer;
+            *(DWORD *) (shared.moduleBase + offsets.dwForceJump) = buffer;
         }
     }
     t1.join();

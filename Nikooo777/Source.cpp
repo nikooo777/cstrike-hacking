@@ -1,7 +1,7 @@
 #include <iostream>
 #include <Windows.h>
 #include <thread>
-
+#include "playerbase.h"
 #define SPACE_DOWN 0x8000
 
 struct gameOffsets {
@@ -46,10 +46,10 @@ DWORD __stdcall bHop(void *pParam) {
     while (val.localPlayer == NULL) {
         val.localPlayer = *(DWORD *) (val.moduleBase + offsets.dwEntityList);
     }
-
+    auto* myself = *(PlayerBase**)(val.moduleBase + offsets.dwEntityList);
     while (!GetAsyncKeyState(VK_END)) {
         if (GetAsyncKeyState(VK_SPACE) & SPACE_DOWN) {
-            val.flag = *(BYTE *) (val.localPlayer + offsets.fFlags);
+            val.flag = myself->m_iFlags;
             uintptr_t buffer = 4;
             if (val.flag & 1) {
                 buffer = 5;

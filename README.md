@@ -1,32 +1,15 @@
-# CS:GO Cheat Library
+# CS:S Cheats (Nikooo777's H4X)
 
 ## Introduction
 
-This is a collection of cheats for the video-game Counter-Strike: Global Offensive.<br />
-These cheats were coded as part of a [YouTube series](https://www.youtube.com/watch?v=1y63M4BvG9A&list=PLzBukBmD3GxuBpWT7xV-pCN-Uu7WwtK7O).
+I love playing games, mostly those built on top of source engine. I also love programming, and while C++ is definitely NOT my language of choice
+I still enjoy messing with it.
 
-## Code Samples
+This repository holds my experiments with game hacking where for the sole purpose of learning I try to implement my own
+Counter-Strike: Source cheats.
 
-**Gaining access to the CSGO application**<br />
-The window is stored ```HWND hwnd = FindWindowA(NULL, "Counter-Strike: Global Offensive");```<br />
-The process ID is retrieved ```GetWindowThreadProcessId(hwnd, &procId);```<br />
-A handle is is created  ```HANDLE hProcess = OpenProcess(PROCESS_ALL_ACCESS, NULL, procId);```
+If you came here thinking to download an executable and have fun cheating, you're in the wrong place. I have 0 knowledge on how to bypass anticheats such as VAC.
 
-**How to read and write process memory** <br />
-How to read process memory: ```RPM<variable type>(address +  offsets);``` <br />
-Example: ```RPM<int>(0xD30B94 + 0x4);``` <br />
+## IDE
 
-How to write process memory: ```WPM<variable type>(address +  offsets, newValue);``` <br />
-Example: ```int value = 999; WPM<int>(0xD30B94 + 0x4, value);```
-
-## Installation
-Update the addresses and offsets. I reccomend using [Hazedumper](https://github.com/frk1/hazedumper) for this. <br />
-Set the character set to Multi-Byte.<br />
-Build the application as **x86** and run as an administrator.<br />
-**Error trouble shooting**<br />
-If you are having issues compiling check out the [faq](https://github.com/HeathHowren/CSGO-Cheats/blob/master/faq.md) for common issues I've seen!<br />
-
-
-## Contributions
-* [HeathHowren](https://github.com/HeathHowren)
-* [beans42](https://github.com/beans42)
+Since everyone uses Visual Studio, I'll go ahead and use Clion by JetBrains. I do most if not all of my development using their tools, and I like the portability over Linux.

@@ -22,6 +22,8 @@
 // NON-PLAYER SPECIFIC (i.e., not used by GameMovement or the client .dll ) -- Can still be applied to players, though
 #define	FL_INWATER				(1<<9)	// In water
 
+#define ALIVE 0
+
 // Created with ReClass.NET 1.2 by KN4CK3R
 struct Vector3 {float x,y,z;};
 class PlayerBase
@@ -30,8 +32,9 @@ public:
     union
     {
         //              Type     Name    Offset
-        DEFINE_MEMBER_N(int, m_iLifeState, 0x0093);
+        DEFINE_MEMBER_N(char, m_iLifeState, 0x0093);
         DEFINE_MEMBER_N(int, m_iHealth, 0x0094);
+        DEFINE_MEMBER_N(int, m_iTeamNum, 0x009C);
         DEFINE_MEMBER_N(Vector3, m_vecVelocity, 0x00F4);
         DEFINE_MEMBER_N(Vector3, m_vecSpeed, 0x0130);
         DEFINE_MEMBER_N(bool , m_bIsDormant, 0x017E);
@@ -40,6 +43,7 @@ public:
         DEFINE_MEMBER_N(Vector3, m_vecPos2, 0x0278);
         DEFINE_MEMBER_N(int, m_iFlags, 0x0350);
         DEFINE_MEMBER_N(int, m_iArmor, 0x1498);
+        DEFINE_MEMBER_N(int, m_iCrosshair, 0x14f0);
     };
 }; //Size: 0x1870
 

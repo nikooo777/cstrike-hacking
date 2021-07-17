@@ -2,8 +2,8 @@
 // Created by Niko on 7/10/2021.
 //
 
-#ifndef CSTRIKE_HAX_PLAYERBASE_H
-#define CSTRIKE_HAX_PLAYERBASE_H
+#ifndef CSTRIKE_HAX_CBASEPLAYER_H
+#define CSTRIKE_HAX_CBASEPLAYER_H
 #define STR_MERGE_IMPL(a, b) a##b
 #define STR_MERGE(a, b) STR_MERGE_IMPL(a, b)
 #define MAKE_PAD(size) STR_MERGE(_pad, __COUNTER__)[size]
@@ -26,7 +26,7 @@
 
 // Created with ReClass.NET 1.2 by KN4CK3R
 struct Vector3 {float x,y,z;};
-class PlayerBase
+class CBasePlayer
 {
 public:
     union
@@ -48,4 +48,4 @@ public:
 }; //Size: 0x1870
 
 
-#endif //CSTRIKE_HAX_PLAYERBASE_H
+#endif //CSTRIKE_HAX_CBASEPLAYER_H

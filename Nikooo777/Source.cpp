@@ -1,7 +1,8 @@
 #include <iostream>
 #include <Windows.h>
 #include <thread>
-#include "playerbase.h"
+#include "CBasePlayer.h"
+#include "mem/mem.h"
 
 #define BUTTON_DOWN 0x8000
 #define ENTGAP 0x10
@@ -16,14 +17,15 @@ struct gameOffsets {
 } offsets;
 
 struct values {
-    PlayerBase *localPlayer;
+    CBasePlayer *localPlayer;
     DWORD clientModuleBase;
     DWORD serverModuleBase;
+    DWORD engineModuleBase;
 } shared;
 
 
-PlayerBase *getPlayer(int index) {
-    return *(PlayerBase **) (shared.clientModuleBase + offsets.dwEntityList + ENTGAP * index);
+CBasePlayer *getPlayer(int index) {
+    return *(CBasePlayer **) (shared.clientModuleBase + offsets.dwEntityList + ENTGAP * index);
 }
 
 void handleBhop() {
@@ -58,10 +60,10 @@ void handleTriggerbot() {
                                 target->m_iLifeState == ALIVE && shared.localPlayer->m_iFlags & FL_ONGROUND);
             if (shouldShoot) {
                 attack1(true);
-            }else{
+            } else {
                 attack1(false);
             }
-        }else{
+        } else {
             attack1(false);
         }
     } else {
@@ -69,9 +71,10 @@ void handleTriggerbot() {
     }
 }
 
-void printInfo(){
+void printInfo() {
     std::cout << "clientModuleBase: 0x" << std::hex << shared.clientModuleBase << std::endl;
     std::cout << "serverModuleBase: 0x" << std::hex << shared.serverModuleBase << std::endl;
+    std::cout << "engineModuleBase: 0x" << std::hex << shared.engineModuleBase << std::endl;
 
     std::cout << "entityListOffset: 0x" << std::hex << offsets.dwEntityList << std::endl;
     std::cout << "forceJumpOffset: 0x" << std::hex << offsets.dwForceJump << std::endl;
@@ -80,7 +83,21 @@ void printInfo(){
     std::cout << "forceAttack2Offset: 0x" << std::hex << offsets.dwForceAttack2 << std::endl;
 
     std::cout << "localPlayer/EntityList: 0x" << std::hex << shared.localPlayer << std::endl;
-    std::cout << "ingame players: " << std::dec << (int)*(PlayerBase **) (shared.serverModuleBase + offsets.dwNumPlayers) << std::endl;
+    std::cout << "ingame players: " << std::dec << (int) *(DWORD **) (shared.serverModuleBase + offsets.dwNumPlayers) << std::endl;
+    DWORD ApplicationPID = GetProcessId(GetCurrentProcess());
+    DWORD engineModuleSize = GetModuleSize(ApplicationPID, (char *) "engine.dll");
+
+    // This is me testing out a few signatures to clientState. More here: https://www.youtube.com/watch?v=J6vO-ANi4Q8
+    auto addr = ScanModCombo((char *) "B9 ? ? ? ? E8 ? ? ? ? E8 ? ? ? ? 83 78 1C 00", (char *) shared.engineModuleBase, (intptr_t) engineModuleSize);
+    auto addr2 = ScanModCombo((char *) "B9 ? ? ? ? E8 ? ? ? ? 5D C2 08 00", (char *) shared.engineModuleBase, (intptr_t) engineModuleSize);
+    auto addr3 = ScanModCombo((char *) "B9 ? ? ? ? E8 ? ? ? ? 83 3D ? ? ? ? ? 75 4A", (char *) shared.engineModuleBase, (intptr_t) engineModuleSize);
+    auto addr4 = ScanModCombo((char *) "B9 ? ? ? ? E8 ? ? ? ? FF 75 FC E8 ? ? ? ? 83", (char *) shared.engineModuleBase, (intptr_t) engineModuleSize);
+    auto addr5 = ScanModCombo((char *) "B9 ? ? ? ? E8 ? ? ? ? 8D 85 ? ? ? ? 50 68 ? ? ? ? FF", (char *) shared.engineModuleBase, (intptr_t) engineModuleSize);
+    std::cout << "clientState: 0x" << std::hex << *(DWORD **) (addr + 1) << std::endl;
+    std::cout << "clientState2: 0x" << std::hex << *(DWORD **) (addr2 + 1) << std::endl; // this one doesn't return a valid address!
+    std::cout << "clientState3: 0x" << std::hex << *(DWORD **) (addr3 + 1) << std::endl;
+    std::cout << "clientState4: 0x" << std::hex << *(DWORD **) (addr4 + 1) << std::endl;
+    std::cout << "clientState5: 0x" << std::hex << *(DWORD **) (addr5 + 1) << std::endl;
 }
 
 DWORD __stdcall doAllTheThings111(void *pParam) {
@@ -94,14 +111,16 @@ DWORD __stdcall doAllTheThings111(void *pParam) {
 
     shared.clientModuleBase = reinterpret_cast<DWORD>(GetModuleHandleA("client.dll"));
     shared.serverModuleBase = reinterpret_cast<DWORD>(GetModuleHandleA("server.dll"));
+    shared.engineModuleBase = reinterpret_cast<DWORD>(GetModuleHandleA("engine.dll"));
 
     //get local player (which is also the first element of the entityList that we can then iterate on)
     while (shared.localPlayer == nullptr) {
-        shared.localPlayer = *(PlayerBase **) (shared.clientModuleBase + offsets.dwEntityList);
+        shared.localPlayer = *(CBasePlayer **) (shared.clientModuleBase + offsets.dwEntityList);
     }
     printInfo();
 
     while (!GetAsyncKeyState(VK_END)) {
+        shared.localPlayer = *(CBasePlayer **) (shared.clientModuleBase + offsets.dwEntityList);
         handleBhop();
         handleTriggerbot();
         if (GetAsyncKeyState(VK_INSERT) & 1) {

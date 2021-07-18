@@ -2,6 +2,7 @@
 #include <Windows.h>
 #include <thread>
 #include "CBasePlayer.h"
+#include "ClientState.h"
 #include "mem/mem.h"
 
 #define BUTTON_DOWN 0x8000
@@ -98,6 +99,9 @@ void printInfo() {
     std::cout << "clientState3: 0x" << std::hex << *(DWORD **) (addr3 + 1) << std::endl;
     std::cout << "clientState4: 0x" << std::hex << *(DWORD **) (addr4 + 1) << std::endl;
     std::cout << "clientState5: 0x" << std::hex << *(DWORD **) (addr5 + 1) << std::endl;
+    auto *client = (ClientState *) (*(DWORD **) (addr5 + 1));
+    std::cout << client->m_vViewAngles.x << " , " << client->m_vViewAngles.y << " , " << client->m_vViewAngles.z << std::endl;
+    
 }
 
 DWORD __stdcall doAllTheThings111(void *pParam) {

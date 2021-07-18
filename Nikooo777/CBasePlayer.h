@@ -33,7 +33,6 @@ class CBasePlayer {
 public:
     union {
         //              Type     Name    Offset
-        DEFINE_MEMBER_N(Vector3, m_vecPunchAngle, 0x6c);
         DEFINE_MEMBER_N(char, m_iLifeState, 0x93);
         DEFINE_MEMBER_N(int, m_iHealth, 0x94);
         DEFINE_MEMBER_N(int, m_iTeamNum, 0x9C);
@@ -44,6 +43,7 @@ public:
         DEFINE_MEMBER_N(Vector3, m_vecViewAngle, 0x26C);
         DEFINE_MEMBER_N(Vector3, m_vecPos2, 0x278);
         DEFINE_MEMBER_N(int, m_iFlags, 0x350);
+        DEFINE_MEMBER_N(Vector3, m_vecPunchAngle, 0xE48);
         DEFINE_MEMBER_N(int, m_iArmor, 0x1498);
         DEFINE_MEMBER_N(int, m_iShotsFired, 0x1430);
         DEFINE_MEMBER_N(int, m_iCrosshair, 0x14f0);

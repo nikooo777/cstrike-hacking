@@ -17,8 +17,6 @@ public:
         //              Type     Name    Offset
         DEFINE_MEMBER_N(Vector3, m_vViewAngles, 0x4b84);
     };
-
-
 };
 
 

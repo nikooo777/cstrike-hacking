@@ -19,9 +19,12 @@ struct gameOffsets {
 
 struct values {
     CBasePlayer *localPlayer;
+    ClientState *clientState;
     DWORD clientModuleBase;
     DWORD serverModuleBase;
     DWORD engineModuleBase;
+    DWORD clientStateAddr;
+    Vector3 oldPunch;
 } shared;
 
 
@@ -72,6 +75,45 @@ void handleTriggerbot() {
     }
 }
 
+float clamp(float x, float upper, float lower) {
+    return min(upper, max(x, lower));
+}
+
+void ClampAngles(Vector3 &angle) {
+    if (angle.x > 89.0f) { angle.x = 89.0f; }
+    if (angle.x < -89.0f) { angle.x = -89.0f; }
+}
+
+void NormalizeAngles(Vector3 &angle) {
+    while (angle.y > 180) {
+        angle.y -= 360;
+    }
+    while (angle.y < -180) {
+        angle.y += 360;
+    }
+
+    angle.y = std::remainderf(angle.y, 360.f);
+}
+
+void handleRecoil() {
+    auto shotsFired = shared.localPlayer->m_iShotsFired;
+    auto punchAngle = shared.localPlayer->m_vecPunchAngle;
+    auto viewAngles = &shared.clientState->m_vViewAngles;
+
+    Vector3 tempAngle = {0, 0, 0};
+    if (shotsFired > 0) {
+        tempAngle.x = (viewAngles->x + shared.oldPunch.x) - (punchAngle.x * 2);
+        tempAngle.y = (viewAngles->y + shared.oldPunch.y) - (punchAngle.y * 2);
+        NormalizeAngles(tempAngle);
+        ClampAngles(tempAngle);
+        shared.oldPunch.x = punchAngle.x * 2;
+        shared.oldPunch.y = punchAngle.y * 2;
+        *viewAngles = tempAngle;
+    } else {
+        shared.oldPunch = {0, 0, 0}; // reset old punch
+    }
+}
+
 void printInfo() {
     std::cout << "clientModuleBase: 0x" << std::hex << shared.clientModuleBase << std::endl;
     std::cout << "serverModuleBase: 0x" << std::hex << shared.serverModuleBase << std::endl;
@@ -82,26 +124,25 @@ void printInfo() {
     std::cout << "numPlayersOffset: 0x" << std::hex << offsets.dwNumPlayers << std::endl;
     std::cout << "forceAttack1Offset: 0x" << std::hex << offsets.dwForceAttack1 << std::endl;
     std::cout << "forceAttack2Offset: 0x" << std::hex << offsets.dwForceAttack2 << std::endl;
+    std::cout << "clientState addr: 0x" << std::hex << shared.clientStateAddr << std::endl;
+    std::cout << "clientState offset: engine.dll + 0x" << std::hex << shared.clientStateAddr - shared.engineModuleBase << std::endl;
+    std::cout << "ViewAngles: clientState + 0x4b84" << std::endl;
 
     std::cout << "localPlayer/EntityList: 0x" << std::hex << shared.localPlayer << std::endl;
     std::cout << "ingame players: " << std::dec << (int) *(DWORD **) (shared.serverModuleBase + offsets.dwNumPlayers) << std::endl;
-    DWORD ApplicationPID = GetProcessId(GetCurrentProcess());
-    DWORD engineModuleSize = GetModuleSize(ApplicationPID, (char *) "engine.dll");
 
     // This is me testing out a few signatures to clientState. More here: https://www.youtube.com/watch?v=J6vO-ANi4Q8
-    auto addr = ScanModCombo((char *) "B9 ? ? ? ? E8 ? ? ? ? E8 ? ? ? ? 83 78 1C 00", (char *) shared.engineModuleBase, (intptr_t) engineModuleSize);
-    auto addr2 = ScanModCombo((char *) "B9 ? ? ? ? E8 ? ? ? ? 5D C2 08 00", (char *) shared.engineModuleBase, (intptr_t) engineModuleSize);
-    auto addr3 = ScanModCombo((char *) "B9 ? ? ? ? E8 ? ? ? ? 83 3D ? ? ? ? ? 75 4A", (char *) shared.engineModuleBase, (intptr_t) engineModuleSize);
-    auto addr4 = ScanModCombo((char *) "B9 ? ? ? ? E8 ? ? ? ? FF 75 FC E8 ? ? ? ? 83", (char *) shared.engineModuleBase, (intptr_t) engineModuleSize);
-    auto addr5 = ScanModCombo((char *) "B9 ? ? ? ? E8 ? ? ? ? 8D 85 ? ? ? ? 50 68 ? ? ? ? FF", (char *) shared.engineModuleBase, (intptr_t) engineModuleSize);
-    std::cout << "clientState: 0x" << std::hex << *(DWORD **) (addr + 1) << std::endl;
-    std::cout << "clientState2: 0x" << std::hex << *(DWORD **) (addr2 + 1) << std::endl; // this one doesn't return a valid address!
-    std::cout << "clientState3: 0x" << std::hex << *(DWORD **) (addr3 + 1) << std::endl;
-    std::cout << "clientState4: 0x" << std::hex << *(DWORD **) (addr4 + 1) << std::endl;
-    std::cout << "clientState5: 0x" << std::hex << *(DWORD **) (addr5 + 1) << std::endl;
-    auto *client = (ClientState *) (*(DWORD **) (addr5 + 1));
-    std::cout << client->m_vViewAngles.x << " , " << client->m_vViewAngles.y << " , " << client->m_vViewAngles.z << std::endl;
-    
+//    auto addr = ScanModCombo((char *) "B9 ? ? ? ? E8 ? ? ? ? E8 ? ? ? ? 83 78 1C 00", (char *) shared.engineModuleBase, (intptr_t) engineModuleSize);
+//    auto addr2 = ScanModCombo((char *) "B9 ? ? ? ? E8 ? ? ? ? 5D C2 08 00", (char *) shared.engineModuleBase, (intptr_t) engineModuleSize);
+//    auto addr3 = ScanModCombo((char *) "B9 ? ? ? ? E8 ? ? ? ? 83 3D ? ? ? ? ? 75 4A", (char *) shared.engineModuleBase, (intptr_t) engineModuleSize);
+//    auto clientStateAddr = ScanModCombo((char *) "B9 ? ? ? ? E8 ? ? ? ? FF 75 FC E8 ? ? ? ? 83", (char *) shared.engineModuleBase, (intptr_t) engineModuleSize) + 1;
+//    auto addr5 = ScanModCombo((char *) "B9 ? ? ? ? E8 ? ? ? ? 8D 85 ? ? ? ? 50 68 ? ? ? ? FF", (char *) shared.engineModuleBase, (intptr_t) engineModuleSize);
+//    std::cout << "clientState: 0x" << std::hex << *(DWORD **) (addr + 1) << std::endl;
+//    std::cout << "clientState2: 0x" << std::hex << *(DWORD **) (addr2 + 1) << std::endl; // this one doesn't return a valid address!
+//    std::cout << "clientState3: 0x" << std::hex << *(DWORD **) (addr3 + 1) << std::endl;
+//    std::cout << "clientState4: 0x" << std::hex << *(DWORD **) (clientStateAddr + 1) << std::endl;
+//    std::cout << "clientState5: 0x" << std::hex << *(DWORD **) (addr5 + 1) << std::endl;
+//    auto *client = (ClientState *) (*(DWORD **) (addr5 + 1));
 }
 
 DWORD __stdcall doAllTheThings111(void *pParam) {
@@ -117,16 +158,21 @@ DWORD __stdcall doAllTheThings111(void *pParam) {
     shared.serverModuleBase = reinterpret_cast<DWORD>(GetModuleHandleA("server.dll"));
     shared.engineModuleBase = reinterpret_cast<DWORD>(GetModuleHandleA("engine.dll"));
 
+    DWORD ApplicationPID = GetProcessId(GetCurrentProcess());
+    DWORD engineModuleSize = GetModuleSize(ApplicationPID, (char *) "engine.dll");
+    shared.clientStateAddr = (DWORD) ScanModCombo((char *) "B9 ? ? ? ? E8 ? ? ? ? FF 75 FC E8 ? ? ? ? 83", (char *) shared.engineModuleBase, (intptr_t) engineModuleSize) + 1;
+    shared.clientState = (ClientState *) (*(DWORD **) (shared.clientStateAddr));
     //get local player (which is also the first element of the entityList that we can then iterate on)
     while (shared.localPlayer == nullptr) {
         shared.localPlayer = *(CBasePlayer **) (shared.clientModuleBase + offsets.dwEntityList);
     }
     printInfo();
-
+    shared.oldPunch = {0, 0, 0};
     while (!GetAsyncKeyState(VK_END)) {
         shared.localPlayer = *(CBasePlayer **) (shared.clientModuleBase + offsets.dwEntityList);
         handleBhop();
         handleTriggerbot();
+        handleRecoil();
         if (GetAsyncKeyState(VK_INSERT) & 1) {
             printInfo();
             Sleep(10); //pressing insert will prevent the rest of the cheats from executing for 10ms...

@@ -1,13 +1,15 @@
+/*
+ * Written by Nikooo777
+ */
 #include <iostream>
 #include <Windows.h>
 #include <thread>
 #include "CBasePlayer.h"
 #include "ClientState.h"
+#include "CCSPlayer.h"
 #include "mem/mem.h"
+#include "misc.h"
 
-#define BUTTON_DOWN 0x8000
-#define ENTGAP 0x10
-#define MAXPLAYERS 64
 
 struct gameOffsets {
     DWORD dwEntityList = 0x4D5AE4;
@@ -53,7 +55,7 @@ void attack1(bool active) {
 
 void handleTriggerbot() {
     if (GetAsyncKeyState(VK_SHIFT) & BUTTON_DOWN) {
-        auto aimedTarget = shared.localPlayer->m_iCrosshair;
+        auto aimedTarget = ((CCSPlayer *) shared.localPlayer)->m_iCrosshair;
         if (aimedTarget > 0 && aimedTarget < MAXPLAYERS) {
             auto target = getPlayer(aimedTarget - 1);
             if (target == nullptr) {
@@ -96,8 +98,8 @@ void NormalizeAngles(Vector3 &angle) {
 }
 
 void handleRecoil() {
-    auto shotsFired = shared.localPlayer->m_iShotsFired;
-    auto punchAngle = shared.localPlayer->m_vecPunchAngle;
+    auto shotsFired = ((CCSPlayer *) shared.localPlayer)->m_iShotsFired;
+    auto punchAngle = shared.localPlayer->m_Local.m_vecPunchAngle;
     auto viewAngles = &shared.clientState->m_vViewAngles;
 
     Vector3 tempAngle = {0, 0, 0};

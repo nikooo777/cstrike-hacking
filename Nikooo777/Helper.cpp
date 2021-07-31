@@ -2,6 +2,7 @@
 // Created by Niko on 7/22/2021.
 //
 
+#include "common.h"
 #include "Helper.h"
 
 Helper *Helper::getInstance() {
@@ -14,19 +15,19 @@ Helper::Helper() = default;
 
 
 ClientState *Helper::GetClientState() {
-    if (this->clientState) {
-        return this->clientState;
+    if (clientState) {
+        return clientState;
     }
     DWORD ApplicationPID = GetProcessId(GetCurrentProcess());
     DWORD engineModuleSize = GetModuleSize(ApplicationPID, (char *) "engine.dll");
 
-    this->clientStateAddr = (DWORD) ScanModCombo((char *) "B9 ? ? ? ? E8 ? ? ? ? FF 75 FC E8 ? ? ? ? 83", (char *) (this->GetModule("engine.dll")), (intptr_t) engineModuleSize) + 1;
-    this->clientState = (ClientState *) (*(DWORD **) (this->clientStateAddr));
-    return this->clientState;
+    clientStateAddr = (DWORD) ScanModCombo((char *) "B9 ? ? ? ? E8 ? ? ? ? FF 75 FC E8 ? ? ? ? 83", (char *) (GetModule("engine.dll")), (intptr_t) engineModuleSize) + 1;
+    clientState = (ClientState *) (*(DWORD **) (clientStateAddr));
+    return clientState;
 }
 
 DWORD Helper::GetClientStateAddress() {
-    if (!this->clientState) {
+    if (!clientState) {
         GetClientState();
     }
     return this->clientStateAddr;
@@ -36,22 +37,30 @@ CBasePlayer *Helper::GetLocalPlayer() {
     CBasePlayer *localPlayer = nullptr;
 
     while (localPlayer == nullptr) {
-        localPlayer = *(CBasePlayer **) (this->GetModule("client.dll") + dwEntityList);
+        localPlayer = *(CBasePlayer **) (GetModule("client.dll") + dwEntityList);
     }
     return localPlayer;
 }
 
-DWORD Helper::GetModule(const char *module) {
-    auto iter = this->modules.find(module);
-    if (iter != this->modules.end()) {
+DWORD Helper::GetModule(const std::string &module) {
+    auto iter = modules.find(module);
+    if (iter != modules.end()) {
         return iter->second;
     }
 
-    auto m = reinterpret_cast<DWORD>(GetModuleHandleA(module));
+    auto m = reinterpret_cast<DWORD>(GetModuleHandleA(module.c_str()));
     this->modules.insert({module, m});
     return m;
 }
 
 CBasePlayer *Helper::GetPlayer(int index) {
-    return *(CBasePlayer **) (this->GetModule("client.dll") + dwEntityList + ENTGAP * index);
+    return *(CBasePlayer **) (GetModule("client.dll") + dwEntityList + ENTGAP * index);
+}
+
+int Helper::GetPlayerCount() {
+    return (int) *(DWORD **) (GetModule("server.dll") + dwNumPlayers);
+}
+
+int Helper::GetMaxPlayerCount() {
+    return (int) *(DWORD **) (GetModule("server.dll") + dwMaxPlayers);
 }

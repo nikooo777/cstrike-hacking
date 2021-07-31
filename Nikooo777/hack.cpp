@@ -2,10 +2,11 @@
 // Created by Niko on 7/22/2021.
 //
 #include "common.h"
-
 #include "bhop.h"
 #include "norecoil.h"
 #include "triggerbot.h"
+#include "aimbot.h"
+#include "Helper.h"
 
 void printInfo() {
     auto helper = Helper::getInstance();
@@ -20,10 +21,12 @@ void printInfo() {
     std::cout << "forceAttack2Offset: 0x" << std::hex << dwForceAttack2 << std::endl;
     std::cout << "clientState addr: 0x" << std::hex << helper->GetClientStateAddress() << std::endl;
     std::cout << "clientState offset: engine.dll + 0x" << std::hex << helper->GetClientStateAddress() - helper->GetModule("engine.dll") << std::endl; //this is wrong
+    std::cout << "clientState offset: engine.dll + 0x" << std::hex << helper->GetClientStateAddress() - helper->GetModule("engine.dll") << std::endl; //this is wrong
     std::cout << "ViewAngles: clientState + 0x4b84" << std::endl;
-
-    std::cout << "localPlayer/EntityList: 0x" << std::hex << helper->GetLocalPlayer() << std::endl; //wtf this is probably wrong
-    std::cout << "ingame players: " << std::dec << (int) *(DWORD **) (helper->GetModule("server.dll") + dwNumPlayers) << std::endl;
+//
+//    std::cout << "localPlayer/EntityList: 0x" << std::hex << helper->GetLocalPlayer() << std::endl; //wtf this is probably wrong
+//    std::cout << "ingame players: " << std::dec << (int) *(DWORD **) (helper->GetModule("server.dll") + dwNumPlayers) << std::endl;
+    std::cout << "my position:" << helper->GetLocalPlayer()->m_vecPos << std::endl;
 }
 
 DWORD __stdcall mainLoop(void *pParam) {
@@ -39,11 +42,14 @@ DWORD __stdcall mainLoop(void *pParam) {
     while (!GetAsyncKeyState(VK_END)) {
         bhop();
         triggerBot();
-        noRecoil();
+        if (GetAsyncKeyState(VK_LBUTTON) & BUTTON_DOWN) {
+            aimbot();
+        }
         if (GetAsyncKeyState(VK_INSERT) & 1) {
             printInfo();
             Sleep(10); //pressing insert will prevent the rest of the cheats from executing for 10ms...
         }
+        noRecoil();
     }
     std::cout << "Exiting!" << std::endl;
     Sleep(2000);

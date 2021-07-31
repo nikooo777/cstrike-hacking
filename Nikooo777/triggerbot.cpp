@@ -5,6 +5,7 @@
 #include "triggerbot.h"
 #include "common.h"
 #include "CCSPlayer.h"
+#include "Helper.h"
 
 
 void attack1(bool active) {

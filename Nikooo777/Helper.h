@@ -4,7 +4,6 @@
 
 #pragma once
 
-#include <map>
 #include "common.h"
 #include "ClientState.h"
 #include "CBasePlayer.h"
@@ -14,7 +13,7 @@ private:
     /* Private constructor to prevent instancing. */
     Helper();
 
-    std::map<const char *, DWORD> modules;
+    std::map<const std::string, DWORD> modules;
 
     ClientState *clientState = nullptr;
     DWORD clientStateAddr = 0x0;
@@ -23,7 +22,7 @@ public:
     /* Static access method. */
     static Helper *getInstance();
 
-    DWORD GetModule(const char *module);
+    DWORD GetModule(const std::string &module);
 
     ClientState *GetClientState();
 
@@ -32,5 +31,9 @@ public:
     CBasePlayer *GetPlayer(int index);
 
     DWORD GetClientStateAddress();
+
+    int GetPlayerCount();
+
+    int GetMaxPlayerCount();
 };
 

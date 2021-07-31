@@ -5,8 +5,8 @@
 #pragma once
 
 #include <iostream>
+#include <map>
 #include <Windows.h>
 #include "mem/mem.h"
-#include "offsets.h"
 #include "misc.h"
-#include "Helper.h"
+#include "offsets.h"

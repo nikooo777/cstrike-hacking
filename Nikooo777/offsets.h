@@ -9,3 +9,5 @@
 #define dwForceAttack1 0x4F5D30
 #define dwForceAttack2 0x4F5D3C
 #define dwNumPlayers 0x4F2150
+#define dwMaxPlayers 0x58BA08
+

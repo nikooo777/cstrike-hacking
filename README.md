@@ -32,8 +32,8 @@ slowly without going crazy with offset/signature updates.
 
 ## Documentation produced while writing the project
 
-> Finding ClientState: https://www.youtube.com/watch?v=J6vO-ANi4Q8
+> Finding ClientState: https://odysee.com/@Swiss-Experiments:a/finding-clientstate-with-ida-on-counter:7 (or yt mirror: https://www.youtube.com/watch?v=J6vO-ANi4Q8)
 
-> Finding viewAngles: https://www.youtube.com/watch?v=mS8ZQ5N7Dvk
+> Finding viewAngles: https://odysee.com/@Swiss-Experiments:a/finding-viewangles-with-ida-for-counter:e (or yt mirror: https://www.youtube.com/watch?v=mS8ZQ5N7Dvk)
 
-> Finding boneMatrix: https://www.youtube.com/watch?v=elKUMiqitxY
+> Finding boneMatrix: https://odysee.com/@Swiss-Experiments:a/how-to-locate-bonematrix:5 (or yt mirror: https://www.youtube.com/watch?v=elKUMiqitxY)

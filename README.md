@@ -35,3 +35,5 @@ slowly without going crazy with offset/signature updates.
 > Finding ClientState: https://www.youtube.com/watch?v=J6vO-ANi4Q8
 
 > Finding viewAngles: https://www.youtube.com/watch?v=mS8ZQ5N7Dvk
+
+> Finding boneMatrix: https://www.youtube.com/watch?v=elKUMiqitxY

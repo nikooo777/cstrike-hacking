@@ -5,7 +5,7 @@
 #include <tlhelp32.h>
 #include "mem.h"
 
-char *ScanBasic(char *pattern, char *mask, char *begin, intptr_t size) {
+char *mem::ScanBasic(const char *pattern, char *mask, char *begin, intptr_t size) {
     intptr_t patternLen = strlen(mask);
 
     for (int i = 0; i < size; i++) {
@@ -23,7 +23,7 @@ char *ScanBasic(char *pattern, char *mask, char *begin, intptr_t size) {
     return nullptr;
 }
 
-char *ScanInternal(char *pattern, char *mask, char *begin, intptr_t size) {
+char *mem::ScanInternal(char *pattern, char *mask, char *begin, intptr_t size) {
     char *match{nullptr};
     MEMORY_BASIC_INFORMATION mbi{};
 
@@ -39,7 +39,7 @@ char *ScanInternal(char *pattern, char *mask, char *begin, intptr_t size) {
     return match;
 }
 
-void Parse(char *combo, char *pattern, char *mask) {
+void mem::Parse(char *combo, char *pattern, char *mask) {
     char lastChar = ' ';
     unsigned int j = 0;
 
@@ -56,28 +56,35 @@ void Parse(char *combo, char *pattern, char *mask) {
     }
     pattern[j] = mask[j] = '\0';
 }
-char* ScanModCombo(char* comboPattern, char *begin, intptr_t size)
-{
+
+char *mem::ScanModCombo(char *comboPattern, char *begin, intptr_t size) {
     char pattern[100]{};
     char mask[100]{};
     Parse(comboPattern, pattern, mask);
-    return ScanInternal(pattern, mask,begin,size);
+    return ScanInternal(pattern, mask, begin, size);
 }
 
-DWORD GetModuleSize(DWORD processID, char* module)
-{
+DWORD mem::GetModuleSize(DWORD processID, char *module) {
     HANDLE hSnap;
     MODULEENTRY32 xModule;
     hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, processID);
     xModule.dwSize = sizeof(MODULEENTRY32);
     if (Module32First(hSnap, &xModule)) {
         while (Module32Next(hSnap, &xModule)) {
-            if (!strncmp((char*)xModule.szModule, module, 8)) {
+            if (!strncmp((char *) xModule.szModule, module, 8)) {
                 CloseHandle(hSnap);
-                return (DWORD)xModule.modBaseSize;
+                return (DWORD) xModule.modBaseSize;
             }
         }
     }
     CloseHandle(hSnap);
     return 0;
+}
+
+void mem::Patch(BYTE *dst, BYTE *src, unsigned int size) {
+    DWORD oldProtect;
+    VirtualProtect(dst, size, PAGE_EXECUTE_READWRITE, &oldProtect);
+
+    memcpy(dst, src, size);
+    VirtualProtect(dst, size, oldProtect, &oldProtect);
 }

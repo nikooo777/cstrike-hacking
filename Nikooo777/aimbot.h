@@ -4,4 +4,6 @@
 
 #pragma once
 
-void aimbot();
+#include "UserCmd.h"
+
+void aimbot(CUserCmd *userCmd);

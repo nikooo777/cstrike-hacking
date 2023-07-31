@@ -7,6 +7,7 @@
 #include "common.h"
 #include "ClientState.h"
 #include "CBasePlayer.h"
+#include "ClientMode.h"
 
 class Helper {
 private:
@@ -16,6 +17,7 @@ private:
     std::map<const std::string, DWORD> modules;
 
     ClientState *clientState = nullptr;
+    ClientMode *clientMode = nullptr;
     DWORD clientStateAddr = 0x0;
 
 public:
@@ -25,6 +27,8 @@ public:
     DWORD GetModule(const std::string &module);
 
     ClientState *GetClientState();
+
+    ClientMode *GetClientMode();
 
     CBasePlayer *GetLocalPlayer();
 

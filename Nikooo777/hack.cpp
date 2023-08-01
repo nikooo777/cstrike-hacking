@@ -7,6 +7,8 @@
 #include "triggerbot.h"
 #include "aimbot.h"
 #include "Helper.h"
+#include "sdk/sdk.h"
+#include "BaseClient.h"
 #include "../minhook/includes/MinHook.h"
 
 
@@ -33,9 +35,12 @@ void printInfo() {
 
 typedef bool(__thiscall *createMove)(void *thisPtr, float, CUserCmd *);
 
-createMove originalCreateMove = nullptr;
+typedef void (__thiscall *FrameStageNotify)(void *thisPtr, ClientFrameStage_t curStage);
 
-bool __fastcall myCreateMove(void *thisptr, void *not_edx, float flInputSampleTime, CUserCmd *userCmd) {
+createMove originalCreateMove = nullptr;
+FrameStageNotify originalFrameStageNotify = nullptr;
+
+bool __fastcall myCreateMove(void *thisPtr, void *not_edx, float flInputSampleTime, CUserCmd *userCmd) {
 	bhop();
 	triggerBot();
 	if (GetAsyncKeyState(VK_LBUTTON) & BUTTON_DOWN) {
@@ -45,9 +50,30 @@ bool __fastcall myCreateMove(void *thisptr, void *not_edx, float flInputSampleTi
 		printInfo();
 		Sleep(10); //pressing insert will prevent the rest of the cheats from executing for 10ms...
 	}
-	noRecoil();
-	return originalCreateMove(thisptr, flInputSampleTime, userCmd);
+	noRecoil(userCmd);
+	return originalCreateMove(thisPtr, flInputSampleTime, userCmd);
 };
+
+void __fastcall myFrameStageNotify(void *thisPtr, void *edx, ClientFrameStage_t curStage) {
+	//used for visual no recoil
+	static Vector3 oldPunch, *pPunch = nullptr;
+	if (curStage == FRAME_RENDER_START) {
+		auto *localPlayer = Helper::getInstance()->GetLocalPlayer();
+		if (localPlayer) {
+			pPunch = &localPlayer->m_Local.m_vecPunchAngle;
+			if (pPunch && pPunch->x != 0 && pPunch->y != 0 && pPunch->z != 0) {
+				oldPunch = *pPunch;
+				pPunch->Zero();
+			}
+		} else {
+			pPunch = nullptr;
+		}
+	}
+	originalFrameStageNotify(thisPtr, curStage);
+	if (pPunch) {
+		*pPunch = oldPunch;
+	}
+}
 
 DWORD __stdcall mainLoop(void *pParam) {
 	//init a console for debug output
@@ -57,24 +83,54 @@ DWORD __stdcall mainLoop(void *pParam) {
 	freopen_s(&pFile, "CONOUT$", "w", stdout);
 	std::cout << "injected Nikooo777!" << std::endl;
 
+	//get address of IBaseClient with the use of CreateInterface
+	auto *baseClient = (BaseClient *) GetInterface("client.dll", "VClient017");
+	if (baseClient == nullptr) {
+		std::cout << "BaseClient is null!" << std::endl;
+		return 1;
+	}
+	//print the address of IBaseClient
+	std::cout << "BaseClient: 0x" << std::hex << baseClient << std::endl;
+	// Get a pointer to the vtable
+	void ***vtable = (void ***) baseClient;
+
+	// Get the address of FrameStageNotify from the vtable
+	//proof: https://scrn.storni.info/2023-08-01_02-32-55.png
+	void *frameStageNotifyAddress = (*vtable)[35];
+
+	// Print the address
+	std::cout << "FrameStageNotify: 0x" << std::hex << frameStageNotifyAddress << std::endl;
+
 	auto clientMode = Helper::getInstance()->GetClientMode();
 
 	auto *addrOfCreateMove = (DWORD *) (((*(DWORD **) (*(DWORD ***) clientMode))[21]));
+
 
 	// Initialize MinHook.
 	if (MH_Initialize() != MH_OK) {
 		return 1;
 	}
 
+	//hook createMove
 	if (MH_CreateHook((LPVOID *) addrOfCreateMove, (LPVOID *) &myCreateMove, reinterpret_cast<LPVOID *>(&originalCreateMove)) != MH_OK) {
 		return 1;
 	}
+	//hook frameStageNotify
+	if (MH_CreateHook(frameStageNotifyAddress, (LPVOID *) &myFrameStageNotify, reinterpret_cast<LPVOID *>(&originalFrameStageNotify)) != MH_OK) {
+		return 1;
+	}
+
+
 	//relative offset
 	auto origAddr = (uint32_t) addrOfCreateMove;
 	auto gateway = (uint32_t) originalCreateMove;
 	uint32_t offset = gateway > origAddr ? gateway - origAddr : origAddr - gateway;
 	std::cout << "original: 0x" << std::hex << origAddr << " gateway: 0x" << gateway << " diff: " << offset << std::endl;
+
 	if (MH_EnableHook((LPVOID *) addrOfCreateMove) != MH_OK) {
+		return 1;
+	}
+	if (MH_EnableHook(frameStageNotifyAddress) != MH_OK) {
 		return 1;
 	}
 
@@ -84,6 +140,9 @@ DWORD __stdcall mainLoop(void *pParam) {
 	}
 	std::cout << "Exiting!" << std::endl;
 	if (MH_DisableHook((LPVOID *) addrOfCreateMove) != MH_OK) {
+		return 1;
+	}
+	if (MH_DisableHook(frameStageNotifyAddress) != MH_OK) {
 		return 1;
 	}
 	// Uninitialize MinHook.

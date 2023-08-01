@@ -4,4 +4,6 @@
 
 #pragma once
 
-void noRecoil();
+#include "UserCmd.h"
+
+void noRecoil(CUserCmd *userCmd);

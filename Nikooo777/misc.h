@@ -17,3 +17,8 @@
 #define    FL_INWATER                (1<<9)    // In water
 
 #define ALIVE 0
+
+#define TEAM_UNASSIGNED 0
+#define TEAM_SPEC 1
+#define TEAM_T 2
+#define TEAM_CT 3

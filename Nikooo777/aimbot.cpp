@@ -23,9 +23,9 @@ void aimbot(CUserCmd *userCmd) {
 	//loop through all players
 	auto closestDistance = 999999.f;
 	auto closestPlayerIndex = -1;
-	for (int i = 0; i < maxPlayers; i++) {
+	for (int i = 1; i <= maxPlayers; i++) {
 		auto p = helper->GetPlayer(i);
-		if (!p || p->m_iTeamNum == localPlayer->m_iTeamNum || p->m_iLifeState != ALIVE || p->m_bIsDormant) {
+		if (!p || p->m_iTeamNum == localPlayer->m_iTeamNum || p->m_iTeamNum == TEAM_UNASSIGNED || p->m_iTeamNum == TEAM_SPEC || p->m_iLifeState != ALIVE || p->m_bIsDormant) {
 			continue;
 		}
 		//find closest enemy
@@ -47,6 +47,10 @@ void aimbot(CUserCmd *userCmd) {
 	auto viewPos = localPlayer->m_vecPos + localPlayer->m_vecViewOffset;
 	//calculate view angles
 	auto newAngles = viewPos.CalcAngle(headPos);
+
+	//debug info
+	//	std::cout << "headPos: " << headPos << std::endl;
+	//	std::cout << "aimed entity index:" << closestPlayerIndex << " team: " << playerToAim->m_iTeamNum << " - dormant: " << playerToAim->m_bIsDormant << std::endl;
 
 	//aim at viewAngles
 	userCmd->viewangles = newAngles;

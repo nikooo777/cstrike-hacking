@@ -10,6 +10,11 @@
 #include "sdk/sdk.h"
 #include "BaseClient.h"
 #include "../minhook/includes/MinHook.h"
+#include "../imgui/imgui.h"
+#include "../imgui/imgui_impl_dx9.h"
+#include "../imgui/imgui_impl_win32.h"
+#include <d3d9.h>
+#include <d3dx9.h>
 
 
 void printInfo() {
@@ -37,8 +42,14 @@ typedef bool(__thiscall *createMove)(void *thisPtr, float, CUserCmd *);
 
 typedef void (__thiscall *FrameStageNotify)(void *thisPtr, ClientFrameStage_t curStage);
 
+typedef HRESULT (__stdcall *EndScene)(LPDIRECT3DDEVICE9 pDevice);
+
 createMove originalCreateMove = nullptr;
 FrameStageNotify originalFrameStageNotify = nullptr;
+EndScene originalEndScene = nullptr;
+IDirect3D9 *pD3D = nullptr;
+HWND window = nullptr;
+IDirect3DDevice9 *pDevice = nullptr;
 
 bool __fastcall myCreateMove(void *thisPtr, void *not_edx, float flInputSampleTime, CUserCmd *userCmd) {
 	bhop();
@@ -75,6 +86,75 @@ void __fastcall myFrameStageNotify(void *thisPtr, void *edx, ClientFrameStage_t 
 	}
 }
 
+HRESULT __stdcall myEndScene(LPDIRECT3DDEVICE9 pDevice) {
+	static bool init = false;
+	if (!init) {
+		MessageBoxA(NULL, "EndScene", "EndScene", MB_OK);
+		init = true;
+	}
+	return originalEndScene(pDevice);
+}
+
+BOOL CALLBACK EnumWindowsCallback(HWND handle, LPARAM lParam) {
+	DWORD wndProcId;
+	GetWindowThreadProcessId(handle, &wndProcId);
+	DWORD processId = GetCurrentProcessId();
+
+	if (processId != wndProcId)
+		return TRUE;
+
+	window = handle;
+	return FALSE;
+}
+
+HWND GetProcessWindow() {
+	EnumWindows(EnumWindowsCallback, NULL);
+	return window;
+}
+
+bool GetD3D9Device(void **pTable, size_t size) {
+	if (!pTable) {
+		return false;
+	}
+
+	pD3D = Direct3DCreate9(D3D_SDK_VERSION);
+	if (!pD3D) {
+		return false;
+	}
+
+	D3DPRESENT_PARAMETERS d3dpp = {};
+	d3dpp.SwapEffect = D3DSWAPEFFECT_DISCARD;
+	d3dpp.hDeviceWindow = GetProcessWindow();
+	d3dpp.Windowed = true;
+
+	HRESULT res = pD3D->CreateDevice(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, d3dpp.hDeviceWindow, D3DCREATE_HARDWARE_VERTEXPROCESSING, &d3dpp, &pDevice);
+
+	if (FAILED(res)) {
+		return false;
+	}
+	if (!pDevice) {
+		pDevice->Release();
+		return false;
+	}
+	memcpy(pTable, *reinterpret_cast<void ***>(pDevice), size);
+
+	pD3D->Release();
+	pDevice->Release();
+	return true;
+}
+
+void CleanupDeviceD3D() {
+	if (pDevice) {
+		pDevice->Release();
+		pDevice = nullptr;
+	}
+	if (pD3D) {
+		pD3D->Release();
+		pD3D = nullptr;
+	}
+}
+
+
 DWORD __stdcall mainLoop(void *pParam) {
 	//init a console for debug output
 	FILE *pFile = nullptr;
@@ -110,6 +190,12 @@ DWORD __stdcall mainLoop(void *pParam) {
 	if (MH_Initialize() != MH_OK) {
 		return 1;
 	}
+	void *d3d9Device[119];
+	if (GetD3D9Device(d3d9Device, sizeof(d3d9Device))) {
+		std::cout << "d3d9Device: 0x" << std::hex << d3d9Device << std::endl;
+	} else {
+		std::cout << "d3d9Device is null!" << std::endl;
+	}
 
 	//hook createMove
 	if (MH_CreateHook((LPVOID *) addrOfCreateMove, (LPVOID *) &myCreateMove, reinterpret_cast<LPVOID *>(&originalCreateMove)) != MH_OK) {
@@ -120,6 +206,11 @@ DWORD __stdcall mainLoop(void *pParam) {
 		return 1;
 	}
 
+	//hook endScene
+	if (MH_CreateHook((LPVOID *) d3d9Device[42], (LPVOID *) &myEndScene, reinterpret_cast<LPVOID *>(&originalEndScene)) != MH_OK) {
+		CleanupDeviceD3D();
+		return 1;
+	}
 
 	//relative offset
 	auto origAddr = (uint32_t) addrOfCreateMove;
@@ -131,6 +222,10 @@ DWORD __stdcall mainLoop(void *pParam) {
 		return 1;
 	}
 	if (MH_EnableHook(frameStageNotifyAddress) != MH_OK) {
+		return 1;
+	}
+	if (MH_EnableHook((LPVOID *) d3d9Device[42]) != MH_OK) {
+		CleanupDeviceD3D();
 		return 1;
 	}
 
@@ -145,6 +240,11 @@ DWORD __stdcall mainLoop(void *pParam) {
 	if (MH_DisableHook(frameStageNotifyAddress) != MH_OK) {
 		return 1;
 	}
+	if (MH_DisableHook((LPVOID *) d3d9Device[42]) != MH_OK) {
+		CleanupDeviceD3D();
+		return 1;
+	}
+
 	// Uninitialize MinHook.
 	if (MH_Uninitialize() != MH_OK) {
 		return 1;

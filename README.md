@@ -38,6 +38,34 @@ slowly without going crazy with offset/signature updates.
 
 > Finding boneMatrix: https://odysee.com/@Swiss-Experiments:a/how-to-locate-bonematrix:5 (or yt mirror: https://www.youtube.com/watch?v=elKUMiqitxY)
 
+## Project layout
+
+```text
+Nikooo777/
+  dllmain.cpp          # DLL entry only
+  core/                # constants, offsets, padding macros, module bases
+  memory/              # pattern scanner
+  math/                # Vector3
+  sdk/                 # Source-like types (entities, UserCmd, interfaces)
+    entity/            # CLocal, CBasePlayer, CCSPlayer
+  game/                # live access: entity list, interface resolve, player helpers
+  hooks/               # MinHook install + CreateMove / FSN / EndScene / D3D helpers
+  features/            # bhop, aimbot, triggerbot, norecoil, menu, debug
+imgui/                 # Dear ImGui + DX9/Win32 backends
+minhook/               # MinHook
+```
+
+**Where to add things**
+
+| Goal | Place |
+|------|--------|
+| New cheat feature | `features/` + call it from `hooks/create_move.cpp` (or EndScene for draw) |
+| New entity field / offset | `sdk/entity/` (+ `core/offsets.h` if global) |
+| New signature / interface | `game/interfaces.cpp` |
+| Shared target checks | `game/player.*` (`IsAlive`, `IsEnemy`, `IsValidTarget`, `EyePosition`) |
+
+In-game: **INSERT** toggles the ImGui menu, **F1** prints debug info to the console, **END** unloads the DLL.
+
 ## End goal
 
 I want to better understand the scenes so that I can better protect my gaming community. I own the number 1 most popular community server on counter-strike: source and it's important for me to always be ahead of everyone else

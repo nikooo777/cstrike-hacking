@@ -56,7 +56,7 @@ The DLL keeps the entry point small and does the work on a worker thread:
 DllMain (process attach)
   -> hooks::MainThread
        -> load signatures.ini beside the DLL and apply runtime settings
-       -> resolve VClient017, ClientMode, ClientState, and a D3D9 vtable
+       -> resolve VClient017, ClientMode, ClientState, RecvTables, and a D3D9 vtable
        -> install MinHook hooks
        -> run feature code from the appropriate callback
 
@@ -72,10 +72,11 @@ END                 -> disable hooks, shut down ImGui, unload the DLL
 ```text
 Nikooo777/
   dllmain.cpp              # DllMain only — starts the main thread
-  core/                    # constants, netvar-ish offsets, padding macros, module bases
+  core/                    # build-specific globals, constants, padding macros, module bases
   config/                  # runtime INI loader
   memory/                  # pattern scanner (ScanModCombo, module size, …)
   math/                    # Vector3 (POD so it works in overlay unions)
+  netvars/                 # runtime ClientClass/RecvTable/RecvProp resolver
   sdk/                     # Source-like types only (no feature logic)
     entity/                # CLocal, CBasePlayer, CCSPlayer
     user_cmd.h, client_*.h, create_interface.*
@@ -98,14 +99,18 @@ config/                    # signatures.ini patterns, settings, and provenance
 4. **`hooks/`** — only place that installs MinHook / D3D and calls into features.
 5. **`dllmain.cpp`** — attach / detach only.
 
-Entity members use absolute `this + offset` accessors (`DEFINE_MEMBER`) so `CCSPlayer : public CBasePlayer` stays layout-safe. Standalone overlays (e.g. `CLocal`) still use pad unions (`DEFINE_MEMBER_N`).
+Networked entity members use runtime `RecvTable` accessors (`DEFINE_NETVAR`) so their
+displacements come from the loaded client metadata. Client-only fields and global
+module slots still use explicit offsets, and standalone overlays (e.g. `CLocal`)
+keep pad unions (`DEFINE_MEMBER_N`) for fields that have not been migrated.
 
 ### Where to add something new
 
 | Goal | Place |
 |------|--------|
 | New cheat feature | `features/foo.*` → call from `hooks/create_move.cpp` (logic) or `hooks/end_scene.cpp` (draw) → add `.cpp` to `CMakeLists.txt` → optional toggle in `features/config.h` + menu |
-| New player / entity field | `sdk/entity/` |
+| Networked player / entity field | Resolve and add its `RecvTable` path in `sdk/entity/` with `DEFINE_NETVAR`; document the discovery in `aidocs/002_netvars-and-entity-offsets.md`. |
+| Client-only entity field | `sdk/entity/` with `DEFINE_MEMBER`, after verifying that it is not in a receive table. |
 | Global address (force jump, entity list, …) | `core/offsets.h` |
 | New interface / signature | Add the pattern, operand rule, and provenance to `config/signatures.ini`; keep resolution logic in `game/interfaces.cpp` and explain discovery in `aidocs/`. |
 | Shared target / eye helpers | `game/player.*` |
@@ -168,8 +173,8 @@ This repository does not provide a standalone executable, injector, or anti-chea
 1. Build the DLL for Win32/x86.
 2. Start a permitted offline or local Counter-Strike: Source session.
 3. Load the DLL using an injector you already trust and are authorized to use.
-4. Check the console for `BaseClient`, `ClientMode`, `FrameStageNotify`, `CreateMove`, and `EndScene` addresses.
-5. Press **F1** to print the module/offset dump, then **Insert** to open the menu.
+4. Check the console for `BaseClient`, `Netvars initialized`, `ClientMode`, `FrameStageNotify`, `CreateMove`, and `EndScene` addresses.
+5. Press **F1** to print the module/global/netvar dump, then **Insert** to open the menu.
 6. Press **End** to restore hooks and unload cleanly.
 7. Confirm the console shows the loaded config path and the signature provenance/match offsets before treating a resolution as valid.
 
@@ -182,17 +187,19 @@ These are the files to revisit when the client build changes:
 | File | What it contains |
 |------|------------------|
 | `core/offsets.h` | Global client/server addresses such as the entity list and force commands. |
-| `sdk/entity/*.h` | Absolute entity-field offsets and the padded `m_Local` layout. |
+| `netvars/netvars.*` | Runtime `ClientClass`/`RecvTable` traversal and entity-relative offsets. |
+| `sdk/entity/*.h` | Netvar-backed entity accessors plus explicitly client-only fields and the remaining padded layout. |
 | `config/signatures.ini` | Runtime patterns, module names, operand offsets, pointer indirections, validation settings, feature defaults, and discovery links. |
 | `game/interfaces.cpp` | `CreateInterface` lookup plus the configured ClientState and ClientMode resolution logic. |
 | `hooks/hooks.cpp` | Vtable slots for `CreateMove`, `FrameStageNotify`, and `EndScene`. |
 | `core/constants.h` | Entity stride, player limits, team values, and movement flags. |
 
-The debug dump reports module bases, the configured offsets, the resolved ClientState address, and the local player position when one is available. If a signature is not found, or a read produces null/garbage data, treat the binary and the offsets as mismatched and re-dump them rather than guessing.
+The debug dump reports module bases, global/client-only offsets, resolved netvar offsets, the resolved ClientState address, and the local player position when one is available. If a signature or required netvar is not found, or a read produces null/garbage data, treat the binary and the offsets as mismatched and re-dump them rather than guessing.
 
 ## Tutorial notes
 
 - [001 - Signature scanning, offsets, and pointer derivation](aidocs/001_signature-scanning-and-offsets.md)
+- [002 - Netvars and entity offsets](aidocs/002_netvars-and-entity-offsets.md)
 
 `config/signatures.ini` is the source of truth for the two current runtime signatures. It intentionally records how each pattern was found, not just the bytes: update the provenance fields whenever a new build is reverse-engineered.
 
@@ -206,12 +213,14 @@ The debug dump reports module bases, the configured offsets, the resolved Client
 | `signatures.ini` cannot be loaded | Build from the repository so CMake copies `config/signatures.ini` beside the DLL; do not launch with a stale or missing adjacent config. |
 | `ClientState signature not found` or `ClientMode signature not found` | The byte pattern is for another client build. Confirm the executable/module version and update the pattern. |
 | `BaseClient is null` | `VClient017` was not exposed by the loaded client module, or the DLL was loaded at the wrong time/process. |
+| `Failed to initialize netvars` | `GetAllClasses`, a required RecvTable, or a required property does not match this client build. Stop and re-check the table path and 32-bit ABI. |
 | D3D9 capture fails or the menu never appears | The code needs a visible, suitably sized game window and a D3D9 device. Wait until the game window is initialized and verify that the target is using D3D9. |
 | A feature crashes or reads implausible values | Stop testing: an entity/global offset is stale or the target is not the expected 32-bit build. |
 
 ## Known limitations
 
 - Offsets, signatures, and vtable assumptions are tied to the client build this project was developed against.
+- Netvars remove several hardcoded entity displacements, but the `ClientClass`/`RecvTable` ABI, table names, property names, and type assumptions are still build-family dependencies.
 - Memory access is direct and lightly validated; this is experimental code, not a hardened runtime.
 - The aimbot is intentionally basic: closest valid target, bone 14, and an immediate angle change. It does not implement visibility checks, smoothing, weapon handling, or movement correction.
 - The triggerbot is deliberately narrow: it uses the crosshair ID and requires the local player to be on the ground.

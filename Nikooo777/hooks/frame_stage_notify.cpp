@@ -12,7 +12,7 @@ void __fastcall hkFrameStageNotify(void *thisPtr, void * /*edx*/, ClientFrameSta
     if (curStage == FRAME_RENDER_START) {
         auto *localPlayer = game::GetLocalPlayer();
         if (features::GetConfig().visualNoRecoil && localPlayer) {
-            pPunch = &localPlayer->m_Local().m_vecPunchAngle;
+            pPunch = &localPlayer->m_Local().m_vecPunchAngle();
             if (pPunch && (pPunch->x != 0 || pPunch->y != 0 || pPunch->z != 0)) {
                 oldPunch = *pPunch;
                 pPunch->Zero();

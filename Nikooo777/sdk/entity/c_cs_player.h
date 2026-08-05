@@ -21,7 +21,7 @@ public:
     DEFINE_MEMBER(float, m_flProgressBarStartTime, 0x1424);
     DEFINE_MEMBER(float, m_flStamina, 0x1428);
     DEFINE_MEMBER(int, m_iDirection, 0x142C);
-    DEFINE_MEMBER(int, m_iShotsFired, 0x1430);
+    DEFINE_NETVAR(int, m_iShotsFired, "DT_CSLocalPlayerExclusive", "m_iShotsFired");
     DEFINE_MEMBER(int, m_bNightVisionOn, 0x1434);
     DEFINE_MEMBER(int, m_bHasNightVision, 0x1435);
     DEFINE_MEMBER(float, m_flVelocityModifier, 0x1438);
@@ -37,6 +37,7 @@ public:
     DEFINE_MEMBER(int, m_bHasDefuser, 0x14A8);
     DEFINE_MEMBER(int, m_bInHostageRescueZone, 0x14A9);
     DEFINE_MEMBER(Vector3, m_vecRagdollVelocity, 0x14B4);
+    // No RecvProp in the current client sample; verified client-only access.
     DEFINE_MEMBER(int, m_iCrosshairID, 0x14F0);
     DEFINE_MEMBER(int, m_cycleLatch, 0x1570);
 

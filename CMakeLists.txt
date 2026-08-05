@@ -25,6 +25,7 @@ set(NIKOOO777_SOURCES
     Nikooo777/config/config.cpp
     Nikooo777/memory/mem.cpp
     Nikooo777/math/vector.cpp
+    Nikooo777/netvars/netvars.cpp
 
     Nikooo777/sdk/create_interface.cpp
 

@@ -1,5 +1,9 @@
 #pragma once
 
+namespace netvars {
+struct ClientClass;
+}
+
 enum ClientFrameStage_t {
     FRAME_UNDEFINED = -1,
     FRAME_START,
@@ -21,7 +25,8 @@ public:
     virtual void Function5();
     virtual void Function6();
     virtual void Function7();
-    virtual void Function8();
+    // IBaseClientDLL::GetAllClasses is the next slot in the Source 1 ABI.
+    virtual netvars::ClientClass *GetAllClasses();
     virtual void Function9();
     virtual void Function10();
     virtual void Function11();

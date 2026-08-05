@@ -18,7 +18,7 @@ void NoRecoil(CUserCmd *userCmd) {
 
     static Vector3 oldPunch = {0, 0, 0};
     auto shotsFired = localPlayer->m_iShotsFired();
-    auto punchAngle = localPlayer->m_Local().m_vecPunchAngle;
+    auto punchAngle = localPlayer->m_Local().m_vecPunchAngle();
 
     Vector3 tempAngle = {0, 0, 0};
     if (shotsFired > 0) {

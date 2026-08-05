@@ -375,6 +375,7 @@ The reusable scanner and resolver helpers are now implemented:
 The ClientMode byte sequence and instruction interpretation above were checked
 against the client.dll sample in the live Ghidra project. The address and
 uniqueness result are specific to that sample; they are not a claim of
-cross-version compatibility. The existing static entity and input offsets
-remain build-specific because this Ghidra sample did not provide verified
-cross-build signatures for them.
+cross-version compatibility. Entity fields that are part of the client receive
+tables are now handled in [002 - Netvars and entity offsets](002_netvars-and-entity-offsets.md).
+The entity-list and force-input globals, client-only state, and bone-matrix
+layout remain build-specific until they have a different source of truth.

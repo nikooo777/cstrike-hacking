@@ -2,6 +2,7 @@
 
 #include "math/vector.h"
 #include "core/padding.h"
+#include "netvars/netvars.h"
 
 #pragma pack(push, 1)
 
@@ -20,8 +21,8 @@ public:
         DEFINE_MEMBER_N(float, m_flDuckJumpTime, 0x4C);
         DEFINE_MEMBER_N(float, m_flJumpTime, 0x50);
         DEFINE_MEMBER_N(float, m_flFallVelocity, 0x58);
-        DEFINE_MEMBER_N(Vector3, m_vecPunchAngle, 0x6C);
-        DEFINE_MEMBER_N(Vector3, m_vecPunchAngleVel, 0xA8);
+        // The punch-angle fields are resolved from DT_Local below. They cannot
+        // live in this padding union because runtime accessors are functions.
         DEFINE_MEMBER_N(bool, m_bDrawViewmodel, 0xE4);
         DEFINE_MEMBER_N(bool, m_bWearingSuit, 0xE5);
         DEFINE_MEMBER_N(bool, m_bPoisoned, 0xE6);
@@ -51,6 +52,9 @@ public:
         DEFINE_MEMBER_N(int, m_audio_localBits, 0x1D8);
         DEFINE_MEMBER_N(int, m_audio_ent, 0x1DC);
     };
+
+    DEFINE_NETVAR(Vector3, m_vecPunchAngle, "DT_Local", "m_vecPunchAngle");
+    DEFINE_NETVAR(Vector3, m_vecPunchAngleVel, "DT_Local", "m_vecPunchAngleVel");
 };
 
 #pragma pack(pop)

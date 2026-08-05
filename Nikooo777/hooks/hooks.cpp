@@ -10,6 +10,7 @@
 #include "features/config.h"
 #include "game/interfaces.h"
 #include "hooks/d3d9_device.h"
+#include "netvars/netvars.h"
 #include "sdk/client_mode.h"
 
 namespace hooks {
@@ -66,6 +67,13 @@ DWORD __stdcall MainThread(void *pModule) {
         return 1;
     }
     std::cout << "BaseClient: 0x" << std::hex << baseClient << std::endl;
+
+    std::string netvarError;
+    if (!netvars::Initialize(baseClient->GetAllClasses(), netvarError)) {
+        std::cout << "Failed to initialize netvars: " << netvarError << std::endl;
+        return 1;
+    }
+    std::cout << "Netvars initialized" << std::endl;
 
     void *frameStageNotifyAddress = GetFrameStageNotifyAddress(baseClient);
     std::cout << "FrameStageNotify: 0x" << std::hex << frameStageNotifyAddress << std::endl;

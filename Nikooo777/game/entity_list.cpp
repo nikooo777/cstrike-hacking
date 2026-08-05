@@ -1,29 +1,29 @@
 #include "game/entity_list.h"
 
-#include "core/modules.h"
-#include "core/offsets.h"
 #include "core/constants.h"
+#include "game/interfaces.h"
 
 namespace game {
 
 CCSPlayer *GetLocalPlayer() {
-    // Entity list slot 0 is the local player. May be null before fully in-game — callers must check.
-    return *reinterpret_cast<CCSPlayer **>(core::GetModule("client.dll") + dwEntityList);
+    return GetPlayer(0);
 }
 
 CCSPlayer *GetPlayer(int index) {
-    if (index < 0) {
+    if (index < 0 || index >= MAXPLAYERS) {
         return nullptr;
     }
-    return *reinterpret_cast<CCSPlayer **>(core::GetModule("client.dll") + dwEntityList + ENTGAP * index);
-}
 
-int GetPlayerCount() {
-    return *reinterpret_cast<int *>(core::GetModule("server.dll") + dwNumPlayers);
-}
+    auto *entityList = GetClientEntityList();
+    if (entityList == nullptr) {
+        return nullptr;
+    }
 
-int GetMaxPlayerCount() {
-    return *reinterpret_cast<int *>(core::GetModule("server.dll") + dwMaxPlayers);
+    // Player slot 0 corresponds to Source entity index 1; entity index 0 is
+    // the world entity in this client build.
+    constexpr int kFirstPlayerEntityIndex = 1;
+    return reinterpret_cast<CCSPlayer *>(
+        entityList->GetClientEntity(kFirstPlayerEntityIndex + index));
 }
 
 } // namespace game

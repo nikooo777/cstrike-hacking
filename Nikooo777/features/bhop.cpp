@@ -3,15 +3,14 @@
 #include <Windows.h>
 
 #include "core/constants.h"
-#include "core/modules.h"
-#include "core/offsets.h"
 #include "features/config.h"
 #include "game/entity_list.h"
+#include "sdk/user_cmd.h"
 
 namespace features {
 
-void Bhop() {
-    if (!GetConfig().bhop) {
+void Bhop(CUserCmd *userCmd) {
+    if (userCmd == nullptr || !GetConfig().bhop) {
         return;
     }
 
@@ -21,11 +20,11 @@ void Bhop() {
     }
 
     if (GetAsyncKeyState(VK_SPACE) & BUTTON_DOWN) {
-        uintptr_t buffer = 4;
         if (local->m_fFlags() & FL_ONGROUND) {
-            buffer = 5;
+            userCmd->buttons |= IN_JUMP;
+        } else {
+            userCmd->buttons &= ~IN_JUMP;
         }
-        *reinterpret_cast<DWORD *>(core::GetModule("client.dll") + dwForceJump) = buffer;
     }
 }
 

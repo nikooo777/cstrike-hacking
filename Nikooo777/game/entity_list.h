@@ -6,7 +6,5 @@ namespace game {
 
 CCSPlayer *GetLocalPlayer();
 CCSPlayer *GetPlayer(int index);
-int GetPlayerCount();
-int GetMaxPlayerCount();
 
 } // namespace game

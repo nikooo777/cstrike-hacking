@@ -129,10 +129,10 @@ normal RecvProp, and `m_vecAbsOrigin` is a client-derived transform. They need
 different evidence: an interface, a signature, a verified client layout, or a
 game function.
 
-The values in `core/offsets.h` are also intentionally unchanged. The entity
-list slot, force-jump/attack commands, and player-count globals are module
-globals, not fields inside a particular entity. A netvar resolver cannot
-replace them.
+The entity-list and force-input values are not netvars. They now use the
+named client entity-list interface and `CUserCmd::buttons`; the discovery and
+ABI checks are documented in [003 - Global addresses, interfaces, and input
+commands](003_global-addresses-and-inputs.md).
 
 ## How to discover a new netvar
 
@@ -180,7 +180,7 @@ Choose the source of truth that matches the kind of value:
 | Value | Preferred source |
 |---|---|
 | Replicated entity field | `RecvTable`/netvar path. |
-| Global entity-list or input command slot | Module-relative offset, until a verified signature or interface replaces it. |
+| Global entity-list or input command slot | Named interface or `CUserCmd`; use a module-relative signature only when no semantic source exists. |
 | Interface pointer or client-state global | `CreateInterface` or a stable signature with operand decoding. |
 | Virtual function entry | Known interface/vtable slot, verified for the target ABI. |
 | Client-only state or derived transform | Client layout/function/signature evidence; not a netvar by default. |
@@ -233,5 +233,5 @@ This change migrates the fields used by the player/aim/trigger/no-recoil
 experiments that are represented by receive tables. It does not claim that all
 fields in `sdk/entity/` are networked or that all remaining constants can be
 replaced with netvars. Treat each remaining member as a separate reverse-
-engineering question, and preserve its provenance when adding the next
-tutorial step.
+engineering question, and preserve its provenance in the numbered tutorial
+notes.

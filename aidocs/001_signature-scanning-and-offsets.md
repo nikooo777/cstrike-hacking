@@ -45,19 +45,19 @@ part that prevents most signature-scanning mistakes.
 
 ## What the project has today
 
-The direct constants in `Nikooo777/core/offsets.h` are module-relative
-addresses for one client build:
+The first version of this tutorial used direct constants in
+`Nikooo777/core/offsets.h` as module-relative addresses for one client build:
 
 ~~~cpp
 auto entityListSlot = core::GetModule("client.dll") + dwEntityList;
 auto forceJump = core::GetModule("client.dll") + dwForceJump;
 ~~~
 
-The entity-list and force-command values are not absolute process addresses.
-They only become addresses after adding the correct module base. The
-`dwNumPlayers` and `dwMaxPlayers` values are consumed with `server.dll` in
-`game/entity_list.cpp`, so the module must be part of the record for every
-offset.
+The current implementation no longer consumes those globals. The entity list
+comes from the named `VClientEntityList003` interface, and force-jump/attack
+features edit `CUserCmd::buttons`. See [003 - Global addresses, interfaces,
+and input commands](003_global-addresses-and-inputs.md) for the Ghidra evidence
+and the source-of-truth decision.
 
 The interface resolver in `Nikooo777/game/interfaces.cpp` already demonstrates
 the other approach:
@@ -347,7 +347,7 @@ context to select the correct site.
 
 ## A practical maintenance loop
 
-For each value that currently lives in `core/offsets.h`:
+For each remaining raw address or build-specific client field:
 
 1. Find a code site that consumes or writes the value.
 2. Capture a short, unique sequence of complete instructions.
@@ -377,5 +377,6 @@ against the client.dll sample in the live Ghidra project. The address and
 uniqueness result are specific to that sample; they are not a claim of
 cross-version compatibility. Entity fields that are part of the client receive
 tables are now handled in [002 - Netvars and entity offsets](002_netvars-and-entity-offsets.md).
-The entity-list and force-input globals, client-only state, and bone-matrix
-layout remain build-specific until they have a different source of truth.
+Client-only state and bone-matrix layout remain build-specific until they have
+a different source of truth. The entity-list and force-input cleanup is
+documented in [003 - Global addresses, interfaces, and input commands](003_global-addresses-and-inputs.md).

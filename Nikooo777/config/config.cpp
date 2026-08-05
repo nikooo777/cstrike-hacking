@@ -262,6 +262,39 @@ bool ReadSignature(const Ini &ini, const char *sectionName,
     return true;
 }
 
+bool ReadInterface(const Ini &ini, const char *sectionName,
+                   const char *displayName, Interface &interfaceDefinition,
+                   std::string &error) {
+    interfaceDefinition = {};
+
+    if (!ReadRequiredString(ini, sectionName, "name",
+                            interfaceDefinition.name, error) ||
+        !ReadRequiredString(ini, sectionName, "module",
+                            interfaceDefinition.module, error) ||
+        !ReadRequiredString(ini, sectionName, "source",
+                            interfaceDefinition.source, error) ||
+        !ReadRequiredString(ini, sectionName, "discovery",
+                            interfaceDefinition.discovery, error)) {
+        return false;
+    }
+
+    if (!ReadOptionalBool(ini, sectionName, "required", true,
+                          interfaceDefinition.required, error) ||
+        !ReadOptionalString(ini, sectionName, "source_readme", "",
+                            interfaceDefinition.sourceReadme, error) ||
+        !ReadOptionalString(ini, sectionName, "notes", "",
+                            interfaceDefinition.notes, error)) {
+        return false;
+    }
+
+    if (interfaceDefinition.required && interfaceDefinition.name.empty()) {
+        error = std::string("required interface name is empty for ") +
+                displayName;
+        return false;
+    }
+    return true;
+}
+
 bool GetSelfPath(HMODULE selfModule, std::string &path, std::string &error) {
     if (selfModule == nullptr) {
         error = "the DLL module handle is null";
@@ -335,7 +368,9 @@ bool Load(HMODULE selfModule, std::string &error) {
         !ReadSignature(ini, "signature.clientstate", "ClientState",
                        candidate.clientState, error) ||
         !ReadSignature(ini, "signature.clientmode", "ClientMode",
-                       candidate.clientMode, error)) {
+                       candidate.clientMode, error) ||
+        !ReadInterface(ini, "interface.cliententitylist", "ClientEntityList",
+                       candidate.clientEntityList, error)) {
         return false;
     }
 

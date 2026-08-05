@@ -1,8 +1,10 @@
 #pragma once
 
 #define BUTTON_DOWN 0x8000
-#define ENTGAP 0x10
 #define MAXPLAYERS 64
+
+#define IN_ATTACK (1 << 0)
+#define IN_JUMP   (1 << 1)
 
 #define FL_ONGROUND   (1 << 0)
 #define FL_DUCKING    (1 << 1)

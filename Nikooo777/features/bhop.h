@@ -1,5 +1,7 @@
 #pragma once
 
+class CUserCmd;
+
 namespace features {
-void Bhop();
+void Bhop(CUserCmd *userCmd);
 }

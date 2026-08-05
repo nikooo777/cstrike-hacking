@@ -75,6 +75,12 @@ DWORD __stdcall MainThread(void *pModule) {
     }
     std::cout << "Netvars initialized" << std::endl;
 
+    auto *clientEntityList = game::GetClientEntityList();
+    if (clientEntityList == nullptr) {
+        std::cout << "ClientEntityList is null!" << std::endl;
+        return 1;
+    }
+
     void *frameStageNotifyAddress = GetFrameStageNotifyAddress(baseClient);
     std::cout << "FrameStageNotify: 0x" << std::hex << frameStageNotifyAddress << std::endl;
 

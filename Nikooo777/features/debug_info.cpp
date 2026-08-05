@@ -3,7 +3,6 @@
 #include <iostream>
 
 #include "core/modules.h"
-#include "core/offsets.h"
 #include "game/entity_list.h"
 #include "game/interfaces.h"
 #include "netvars/netvars.h"
@@ -30,12 +29,9 @@ void PrintDebugInfo() {
     std::cout << "serverModuleBase: 0x" << std::hex << core::GetModule("server.dll") << std::endl;
     std::cout << "engineModuleBase: 0x" << std::hex << core::GetModule("engine.dll") << std::endl;
 
-    std::cout << "global/client-only offsets:" << std::endl;
-    std::cout << "  entityList: 0x" << std::hex << dwEntityList << std::endl;
-    std::cout << "  forceJump: 0x" << std::hex << dwForceJump << std::endl;
-    std::cout << "  numPlayers: 0x" << std::hex << dwNumPlayers << std::endl;
-    std::cout << "  forceAttack1: 0x" << std::hex << dwForceAttack1 << std::endl;
-    std::cout << "  forceAttack2: 0x" << std::hex << dwForceAttack2 << std::dec << std::endl;
+    std::cout << "runtime interfaces/client-only offsets:" << std::endl;
+    std::cout << "  clientEntityList: 0x" << std::hex
+              << game::GetClientEntityList() << std::dec << std::endl;
     PrintNetvar("entity m_lifeState", "DT_BasePlayer", "m_lifeState");
     PrintNetvar("entity m_iHealth", "DT_BasePlayer", "m_iHealth");
     PrintNetvar("entity m_iTeamNum", "DT_BaseEntity", "m_iTeamNum");

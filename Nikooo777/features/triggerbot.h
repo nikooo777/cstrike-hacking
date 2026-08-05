@@ -1,5 +1,7 @@
 #pragma once
 
+class CUserCmd;
+
 namespace features {
-void Triggerbot();
+void Triggerbot(CUserCmd *userCmd);
 }

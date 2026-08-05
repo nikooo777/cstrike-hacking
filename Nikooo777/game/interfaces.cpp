@@ -15,6 +15,7 @@ namespace {
 ClientState *g_clientState = nullptr;
 ClientMode *g_clientMode = nullptr;
 BaseClient *g_baseClient = nullptr;
+IClientEntityList *g_clientEntityList = nullptr;
 std::uintptr_t g_clientStateAddr = 0;
 
 char *FindUniqueSignature(const config::Signature &signature,
@@ -184,6 +185,46 @@ BaseClient *GetBaseClient() {
     }
     g_baseClient = static_cast<BaseClient *>(GetInterface("client.dll", "VClient017"));
     return g_baseClient;
+}
+
+IClientEntityList *GetClientEntityList() {
+    if (g_clientEntityList != nullptr) {
+        return g_clientEntityList;
+    }
+    if (!config::IsLoaded()) {
+        std::cout << "ClientEntityList: config not loaded" << std::endl;
+        return nullptr;
+    }
+
+    const auto &definition = config::Get().clientEntityList;
+    g_clientEntityList = static_cast<IClientEntityList *>(
+        GetInterface(definition.module.c_str(), definition.name.c_str()));
+    if (g_clientEntityList == nullptr) {
+        std::cout << "ClientEntityList interface not found: "
+                  << definition.name << std::endl;
+        return nullptr;
+    }
+
+    if (config::Get().settings.validatePointers &&
+        !HasUsableVtable(g_clientEntityList)) {
+        std::cout << "ClientEntityList vtable is not usable" << std::endl;
+        g_clientEntityList = nullptr;
+        return nullptr;
+    }
+
+    if (config::Get().settings.logMatchOffsets) {
+        std::cout << "ClientEntityList source: " << definition.source
+                  << std::endl;
+        if (!definition.sourceReadme.empty()) {
+            std::cout << "ClientEntityList README: "
+                      << definition.sourceReadme << std::endl;
+        }
+        std::cout << "ClientEntityList discovery: "
+                  << definition.discovery << std::endl;
+    }
+    std::cout << "ClientEntityList: " << definition.name << " at 0x"
+              << std::hex << g_clientEntityList << std::dec << std::endl;
+    return g_clientEntityList;
 }
 
 std::uintptr_t GetClientStateAddress() {

@@ -25,6 +25,17 @@ struct Signature {
     std::string notes;
 };
 
+struct Interface {
+    std::string name;
+    std::string module;
+    bool required = true;
+
+    std::string discovery;
+    std::string source;
+    std::string sourceReadme;
+    std::string notes;
+};
+
 struct Settings {
     bool requireUnique = true;
     bool validatePointers = true;
@@ -46,6 +57,7 @@ struct Config {
     FeatureDefaults features;
     Signature clientState;
     Signature clientMode;
+    Interface clientEntityList;
 };
 
 bool Load(HMODULE selfModule, std::string &error);

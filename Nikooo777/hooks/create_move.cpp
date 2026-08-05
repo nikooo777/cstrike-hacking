@@ -13,8 +13,13 @@
 namespace hooks {
 
 bool __fastcall hkCreateMove(void *thisPtr, void * /*edx*/, float flInputSampleTime, CUserCmd *userCmd) {
-    features::Bhop();
-    features::Triggerbot();
+    const bool result = originalCreateMove(thisPtr, flInputSampleTime, userCmd);
+    if (userCmd == nullptr) {
+        return result;
+    }
+
+    features::Bhop(userCmd);
+    features::Triggerbot(userCmd);
 
     if ((GetAsyncKeyState(VK_LBUTTON) & BUTTON_DOWN) && features::GetConfig().aimbot) {
         features::Aimbot(userCmd);
@@ -25,7 +30,7 @@ bool __fastcall hkCreateMove(void *thisPtr, void * /*edx*/, float flInputSampleT
     }
 
     features::NoRecoil(userCmd);
-    return originalCreateMove(thisPtr, flInputSampleTime, userCmd);
+    return result;
 }
 
 } // namespace hooks

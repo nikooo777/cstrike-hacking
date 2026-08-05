@@ -19,9 +19,15 @@ void PrintDebugInfo() {
     std::cout << "numPlayersOffset: 0x" << std::hex << dwNumPlayers << std::endl;
     std::cout << "forceAttack1Offset: 0x" << std::hex << dwForceAttack1 << std::endl;
     std::cout << "forceAttack2Offset: 0x" << std::hex << dwForceAttack2 << std::endl;
-    std::cout << "clientState addr: 0x" << std::hex << game::GetClientStateAddress() << std::endl;
-    std::cout << "clientState offset: engine.dll + 0x" << std::hex
-              << game::GetClientStateAddress() - core::GetModule("engine.dll") << std::endl;
+    const auto clientStateAddress = game::GetClientStateAddress();
+    const auto engineBase = core::GetModule("engine.dll");
+    std::cout << "clientState addr: 0x" << std::hex << clientStateAddress << std::endl;
+    if (clientStateAddress != 0 && engineBase != 0 && clientStateAddress >= engineBase) {
+        std::cout << "clientState offset: engine.dll + 0x" << std::hex
+                  << clientStateAddress - engineBase << std::endl;
+    } else {
+        std::cout << "clientState offset: unavailable" << std::endl;
+    }
     std::cout << "ViewAngles: clientState + 0x4b84" << std::endl;
 
     if (auto *local = game::GetLocalPlayer()) {

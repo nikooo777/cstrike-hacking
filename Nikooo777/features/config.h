@@ -1,5 +1,7 @@
 #pragma once
 
+#include "config/config.h"
+
 namespace features {
 
 // Runtime toggles (ImGui menu + defaults for offline testing).
@@ -15,6 +17,16 @@ struct Config {
 inline Config &GetConfig() {
     static Config cfg;
     return cfg;
+}
+
+inline void ApplyConfig(const config::Config &source) {
+    auto &target = GetConfig();
+    target.bhop = source.features.bhop;
+    target.aimbot = source.features.aimbot;
+    target.triggerbot = source.features.triggerbot;
+    target.norecoil = source.features.norecoil;
+    target.visualNoRecoil = source.features.visualNoRecoil;
+    target.menuOpen = source.features.menuOpen;
 }
 
 } // namespace features

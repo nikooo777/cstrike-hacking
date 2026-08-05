@@ -22,6 +22,7 @@ set(NIKOOO777_SOURCES
 
     Nikooo777/core/modules.cpp
 
+    Nikooo777/config/config.cpp
     Nikooo777/memory/mem.cpp
     Nikooo777/math/vector.cpp
 
@@ -62,6 +63,12 @@ target_include_directories(nikooo777 PRIVATE
     ${CMAKE_SOURCE_DIR}/minhook/includes
     ${CMAKE_SOURCE_DIR}/imgui
     ${DXSDK_DIR}/Include
+)
+
+configure_file(
+    "${CMAKE_SOURCE_DIR}/config/signatures.ini"
+    "${CMAKE_CURRENT_BINARY_DIR}/signatures.ini"
+    COPYONLY
 )
 
 # Debug CRT MinHook by default (matches previous setup).

@@ -2,9 +2,12 @@
 
 #include <cstdio>
 #include <iostream>
+#include <string>
 
 #include "MinHook.h"
+#include "config/config.h"
 #include "features/debug_info.h"
+#include "features/config.h"
 #include "game/interfaces.h"
 #include "hooks/d3d9_device.h"
 #include "sdk/client_mode.h"
@@ -48,6 +51,14 @@ DWORD __stdcall MainThread(void *pModule) {
     SetConsoleTitleA("Nikooo777's H4X!337");
     freopen_s(&pFile, "CONOUT$", "w", stdout);
     std::cout << "injected Nikooo777!" << std::endl;
+
+    std::string configError;
+    if (!config::Load(reinterpret_cast<HMODULE>(pModule), configError)) {
+        std::cout << "Failed to load signatures.ini: " << configError << std::endl;
+        return 1;
+    }
+    features::ApplyConfig(config::Get());
+    std::cout << "Loaded config: " << config::Get().path << std::endl;
 
     auto *baseClient = game::GetBaseClient();
     if (baseClient == nullptr) {

@@ -1,4 +1,4 @@
-# CS:S Cheats (Nikooo777's H4X)
+# source engine reverse engineering tutorial
 
 ## Introduction
 
@@ -6,7 +6,7 @@ I love playing games, mostly those built on top of source engine. I also love pr
 NOT my language of choice I still enjoy messing with it.
 
 This repository holds my experiments with game hacking where for the sole purpose of learning I try to implement my own
-Counter-Strike: Source cheats.
+Counter-Strike: Source engine.
 
 If you came here thinking to download an executable and have fun cheating, you're in the wrong place. I have 0 knowledge
 on how to bypass anticheats such as VAC.
@@ -16,7 +16,7 @@ on how to bypass anticheats such as VAC.
 Since everyone uses Visual Studio, I'll go ahead and use Clion by JetBrains. I do most if not all of my development
 using their tools, and I like the portability over Linux.
 
-## Do you want to learn how to make your own cheats?
+## Do you want to learn how to make your own engines?
 
 ["EzPz."](https://guidedhacking.com/threads/ghb1-start-here-beginner-guide-to-game-hacking.5911/) <- that's what I'm
 doing
@@ -37,3 +37,7 @@ slowly without going crazy with offset/signature updates.
 > Finding viewAngles: https://odysee.com/@Swiss-Experiments:a/finding-viewangles-with-ida-for-counter:e (or yt mirror: https://www.youtube.com/watch?v=mS8ZQ5N7Dvk)
 
 > Finding boneMatrix: https://odysee.com/@Swiss-Experiments:a/how-to-locate-bonematrix:5 (or yt mirror: https://www.youtube.com/watch?v=elKUMiqitxY)
+
+## End goal
+
+I want to better understand the scenes so that I can better protect my gaming community. I own the number 1 most popular community server on counter-strike: source and it's important for me to always be ahead of everyone else

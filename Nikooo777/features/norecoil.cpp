@@ -11,8 +11,12 @@ void NoRecoil(CUserCmd *userCmd) {
         return;
     }
 
-    static Vector3 oldPunch = {0, 0, 0};
     auto localPlayer = game::GetLocalPlayer();
+    if (!localPlayer) {
+        return;
+    }
+
+    static Vector3 oldPunch = {0, 0, 0};
     auto shotsFired = localPlayer->m_iShotsFired();
     auto punchAngle = localPlayer->m_Local().m_vecPunchAngle;
 

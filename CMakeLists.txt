@@ -11,6 +11,11 @@ if (CMAKE_SIZEOF_VOID_P EQUAL 8)
                     "Use VS Build Tools: vcvarsall x86, or a CLion MSVC Win32 profile.")
 endif()
 
+# DirectX SDK (June 2010) — override with -DDXSDK_DIR=... if installed elsewhere.
+if (NOT DEFINED DXSDK_DIR)
+    set(DXSDK_DIR "C:/Program Files (x86)/Microsoft DirectX SDK (June 2010)")
+endif()
+
 # --- Project sources (explicit: easy to see what belongs in the DLL) ---
 set(NIKOOO777_SOURCES
     Nikooo777/dllmain.cpp
@@ -40,7 +45,7 @@ set(NIKOOO777_SOURCES
     Nikooo777/hooks/hooks.cpp
 )
 
-# --- Dear ImGui (core + DX9 / Win32 backends; skip demo) ---
+# Dear ImGui (core + DX9 / Win32 backends; demo intentionally omitted)
 set(IMGUI_SOURCES
     imgui/imgui.cpp
     imgui/imgui_draw.cpp
@@ -56,7 +61,7 @@ target_include_directories(nikooo777 PRIVATE
     ${CMAKE_SOURCE_DIR}/Nikooo777
     ${CMAKE_SOURCE_DIR}/minhook/includes
     ${CMAKE_SOURCE_DIR}/imgui
-    "C:/Program Files (x86)/Microsoft DirectX SDK (June 2010)/Include"
+    ${DXSDK_DIR}/Include
 )
 
 # Debug CRT MinHook by default (matches previous setup).
@@ -65,8 +70,8 @@ if (CMAKE_BUILD_TYPE STREQUAL "Release")
     set(MINHOOK_LIB "${CMAKE_SOURCE_DIR}/minhook/lib/libMinHook-x86-v141-md.lib")
 endif()
 
+# d3d9 only — ImGui's DX9 backend does not need d3dx9.
 target_link_libraries(nikooo777 PRIVATE
     ${MINHOOK_LIB}
-    "C:/Program Files (x86)/Microsoft DirectX SDK (June 2010)/Lib/x86/d3d9.lib"
-    "C:/Program Files (x86)/Microsoft DirectX SDK (June 2010)/Lib/x86/d3dx9.lib"
+    ${DXSDK_DIR}/Lib/x86/d3d9.lib
 )

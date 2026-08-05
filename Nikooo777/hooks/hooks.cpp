@@ -7,12 +7,40 @@
 #include "features/debug_info.h"
 #include "game/interfaces.h"
 #include "hooks/d3d9_device.h"
+#include "sdk/client_mode.h"
 
 namespace hooks {
 
 CreateMoveFn originalCreateMove = nullptr;
 FrameStageNotifyFn originalFrameStageNotify = nullptr;
 EndSceneFn originalEndScene = nullptr;
+
+namespace {
+
+// IClientMode::CreateMove is vtable index 21 on this CS:S client build.
+constexpr int kCreateMoveVtableIndex = 21;
+// IBaseClientDLL::FrameStageNotify is vtable index 35.
+constexpr int kFrameStageNotifyVtableIndex = 35;
+// IDirect3DDevice9::EndScene is vtable index 42.
+constexpr int kEndSceneVtableIndex = 42;
+
+template <typename T>
+T GetVFunc(void *instance, int index) {
+    auto **vtable = *reinterpret_cast<void ***>(instance);
+    return reinterpret_cast<T>(vtable[index]);
+}
+
+void *GetCreateMoveAddress(ClientMode *clientMode) {
+    // ClientMode pointer → vtable → CreateMove slot.
+    return reinterpret_cast<void *>(GetVFunc<CreateMoveFn>(clientMode, kCreateMoveVtableIndex));
+}
+
+void *GetFrameStageNotifyAddress(BaseClient *baseClient) {
+    return reinterpret_cast<void *>(
+        GetVFunc<FrameStageNotifyFn>(baseClient, kFrameStageNotifyVtableIndex));
+}
+
+} // namespace
 
 DWORD __stdcall MainThread(void *pModule) {
     FILE *pFile = nullptr;
@@ -28,26 +56,31 @@ DWORD __stdcall MainThread(void *pModule) {
     }
     std::cout << "BaseClient: 0x" << std::hex << baseClient << std::endl;
 
-    void ***vtable = (void ***)baseClient;
-    void *frameStageNotifyAddress = (*vtable)[35];
+    void *frameStageNotifyAddress = GetFrameStageNotifyAddress(baseClient);
     std::cout << "FrameStageNotify: 0x" << std::hex << frameStageNotifyAddress << std::endl;
 
-    auto clientMode = game::GetClientMode();
-    auto *addrOfCreateMove = (DWORD *)(((*(DWORD **)(*(DWORD ***)clientMode))[21]));
+    auto *clientMode = game::GetClientMode();
+    if (!clientMode) {
+        std::cout << "ClientMode is null!" << std::endl;
+        return 1;
+    }
+    void *createMoveAddress = GetCreateMoveAddress(clientMode);
+    std::cout << "CreateMove: 0x" << std::hex << createMoveAddress << std::endl;
 
     if (MH_Initialize() != MH_OK) {
         return 1;
     }
 
     void *d3d9Device[119] = {};
-    if (GetD3D9Device(d3d9Device, sizeof(d3d9Device))) {
-        std::cout << "d3d9Device vtable captured" << std::endl;
-    } else {
-        std::cout << "d3d9Device is null!" << std::endl;
+    if (!GetD3D9Device(d3d9Device, sizeof(d3d9Device))) {
+        std::cout << "Failed to capture D3D9 device vtable" << std::endl;
+        MH_Uninitialize();
         return 1;
     }
+    void *endSceneAddress = d3d9Device[kEndSceneVtableIndex];
+    std::cout << "EndScene: 0x" << std::hex << endSceneAddress << std::endl;
 
-    if (MH_CreateHook((LPVOID)addrOfCreateMove, (LPVOID)&hkCreateMove,
+    if (MH_CreateHook(createMoveAddress, (LPVOID)&hkCreateMove,
                       reinterpret_cast<LPVOID *>(&originalCreateMove)) != MH_OK) {
         return 1;
     }
@@ -55,18 +88,14 @@ DWORD __stdcall MainThread(void *pModule) {
                       reinterpret_cast<LPVOID *>(&originalFrameStageNotify)) != MH_OK) {
         return 1;
     }
-    if (MH_CreateHook((LPVOID)d3d9Device[42], (LPVOID)&hkEndScene,
+    if (MH_CreateHook(endSceneAddress, (LPVOID)&hkEndScene,
                       reinterpret_cast<LPVOID *>(&originalEndScene)) != MH_OK) {
         return 1;
     }
 
-    if (MH_EnableHook((LPVOID)addrOfCreateMove) != MH_OK) {
-        return 1;
-    }
-    if (MH_EnableHook(frameStageNotifyAddress) != MH_OK) {
-        return 1;
-    }
-    if (MH_EnableHook((LPVOID)d3d9Device[42]) != MH_OK) {
+    if (MH_EnableHook(createMoveAddress) != MH_OK ||
+        MH_EnableHook(frameStageNotifyAddress) != MH_OK ||
+        MH_EnableHook(endSceneAddress) != MH_OK) {
         return 1;
     }
 
@@ -79,9 +108,9 @@ DWORD __stdcall MainThread(void *pModule) {
 
     std::cout << "Exiting!" << std::endl;
 
-    MH_DisableHook((LPVOID)addrOfCreateMove);
+    MH_DisableHook(createMoveAddress);
     MH_DisableHook(frameStageNotifyAddress);
-    MH_DisableHook((LPVOID)d3d9Device[42]);
+    MH_DisableHook(endSceneAddress);
     MH_Uninitialize();
 
     ShutdownEndScene();

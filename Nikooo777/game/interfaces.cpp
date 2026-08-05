@@ -28,6 +28,10 @@ ClientState *GetClientState() {
 
     auto scan = mem::ScanModCombo((char *)"B9 ? ? ? ? E8 ? ? ? ? FF 75 FC E8 ? ? ? ? 83",
                                   (char *)engineBase, (intptr_t)engineSize);
+    if (!scan) {
+        std::cout << "ClientState signature not found" << std::endl;
+        return nullptr;
+    }
     g_clientStateAddr = reinterpret_cast<std::uintptr_t>(scan) + 1;
     g_clientState = *reinterpret_cast<ClientState **>(g_clientStateAddr);
     return g_clientState;
@@ -44,12 +48,14 @@ ClientMode *GetClientMode() {
 
     auto scan = mem::ScanModCombo((char *)"8B 0D ? ? ? ? 8B 01 5D FF 60 28 CC", (char *)clientBase,
                                   (intptr_t)clientSize);
-    auto clientModeAddr = reinterpret_cast<std::uintptr_t>(scan) + 2;
-    std::cout << "clientMode addr: 0x" << std::hex << **reinterpret_cast<DWORD **>(clientModeAddr)
-              << std::endl;
-    g_clientMode = *reinterpret_cast<ClientMode **>(clientModeAddr);
-    std::cout << "clientMode2 addr: 0x" << std::hex << *reinterpret_cast<uintptr_t *>(g_clientMode)
-              << std::endl;
+    if (!scan) {
+        std::cout << "ClientMode signature not found" << std::endl;
+        return nullptr;
+    }
+    // Pattern points at `mov ecx, [g_pClientMode]` — +2 skips opcode/modrm to the absolute address.
+    auto clientModePtrAddr = reinterpret_cast<std::uintptr_t>(scan) + 2;
+    g_clientMode = *reinterpret_cast<ClientMode **>(clientModePtrAddr);
+    std::cout << "ClientMode: 0x" << std::hex << g_clientMode << std::endl;
     return g_clientMode;
 }
 
@@ -57,7 +63,7 @@ BaseClient *GetBaseClient() {
     if (g_baseClient) {
         return g_baseClient;
     }
-    g_baseClient = (BaseClient *)GetInterface("client.dll", "VClient017");
+    g_baseClient = static_cast<BaseClient *>(GetInterface("client.dll", "VClient017"));
     return g_baseClient;
 }
 

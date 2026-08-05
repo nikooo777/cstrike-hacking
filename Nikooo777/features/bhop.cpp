@@ -15,9 +15,14 @@ void Bhop() {
         return;
     }
 
+    auto *local = game::GetLocalPlayer();
+    if (!local) {
+        return;
+    }
+
     if (GetAsyncKeyState(VK_SPACE) & BUTTON_DOWN) {
         uintptr_t buffer = 4;
-        if (game::GetLocalPlayer()->m_fFlags() & FL_ONGROUND) {
+        if (local->m_fFlags() & FL_ONGROUND) {
             buffer = 5;
         }
         *reinterpret_cast<DWORD *>(core::GetModule("client.dll") + dwForceJump) = buffer;

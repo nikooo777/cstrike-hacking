@@ -7,9 +7,6 @@ namespace features {
 
 void Menu() {
     auto &cfg = GetConfig();
-    if (!cfg.menuOpen) {
-        return;
-    }
 
     ImGui::Begin("Nikooo777", &cfg.menuOpen);
     ImGui::Checkbox("Bhop", &cfg.bhop);
@@ -17,7 +14,10 @@ void Menu() {
     ImGui::Checkbox("Triggerbot", &cfg.triggerbot);
     ImGui::Checkbox("No recoil (cmd)", &cfg.norecoil);
     ImGui::Checkbox("Visual no recoil (FSN)", &cfg.visualNoRecoil);
-    ImGui::Text("INSERT: toggle menu | END: unload");
+    ImGui::Separator();
+    ImGui::Text("INSERT: toggle menu");
+    ImGui::Text("F1: console debug dump");
+    ImGui::Text("END: unload DLL");
     ImGui::End();
 }
 

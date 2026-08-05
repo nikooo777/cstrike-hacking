@@ -32,12 +32,17 @@ void Triggerbot() {
     }
 
     auto localPlayer = game::GetLocalPlayer();
+    if (!localPlayer) {
+        Attack1(false);
+        return;
+    }
+
     if (GetAsyncKeyState(VK_SHIFT) & BUTTON_DOWN) {
         auto aimedTarget = localPlayer->m_iCrosshairID();
         if (aimedTarget > 0 && aimedTarget < MAXPLAYERS) {
             auto target = game::GetPlayer(aimedTarget - 1);
             if (target == nullptr) {
-                std::cout << "target is null!" << std::endl;
+                Attack1(false);
                 return;
             }
             auto shouldShoot = game::IsValidTarget(localPlayer, target) &&

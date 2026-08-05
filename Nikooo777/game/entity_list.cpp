@@ -7,14 +7,14 @@
 namespace game {
 
 CCSPlayer *GetLocalPlayer() {
-    CCSPlayer *localPlayer = nullptr;
-    while (localPlayer == nullptr) {
-        localPlayer = *reinterpret_cast<CCSPlayer **>(core::GetModule("client.dll") + dwEntityList);
-    }
-    return localPlayer;
+    // Entity list slot 0 is the local player. May be null before fully in-game — callers must check.
+    return *reinterpret_cast<CCSPlayer **>(core::GetModule("client.dll") + dwEntityList);
 }
 
 CCSPlayer *GetPlayer(int index) {
+    if (index < 0) {
+        return nullptr;
+    }
     return *reinterpret_cast<CCSPlayer **>(core::GetModule("client.dll") + dwEntityList + ENTGAP * index);
 }
 

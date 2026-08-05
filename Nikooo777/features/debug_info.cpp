@@ -23,7 +23,12 @@ void PrintDebugInfo() {
     std::cout << "clientState offset: engine.dll + 0x" << std::hex
               << game::GetClientStateAddress() - core::GetModule("engine.dll") << std::endl;
     std::cout << "ViewAngles: clientState + 0x4b84" << std::endl;
-    std::cout << "my position:" << game::GetLocalPlayer()->m_vecOrigin() << std::endl;
+
+    if (auto *local = game::GetLocalPlayer()) {
+        std::cout << "my position:" << local->m_vecOrigin() << std::endl;
+    } else {
+        std::cout << "local player: null (not in game?)" << std::endl;
+    }
 }
 
 } // namespace features

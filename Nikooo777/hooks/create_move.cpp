@@ -20,10 +20,6 @@ bool __fastcall hkCreateMove(void *thisPtr, void * /*edx*/, float flInputSampleT
         features::Aimbot(userCmd);
     }
 
-    if (GetAsyncKeyState(VK_INSERT) & 1) {
-        features::GetConfig().menuOpen = !features::GetConfig().menuOpen;
-    }
-
     if (GetAsyncKeyState(VK_F1) & 1) {
         features::PrintDebugInfo();
     }

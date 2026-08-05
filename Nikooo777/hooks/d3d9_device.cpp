@@ -8,10 +8,22 @@ HWND g_window = nullptr;
 IDirect3D9 *g_pD3D = nullptr;
 IDirect3DDevice9 *g_pDevice = nullptr;
 
+// Prefer a visible top-level window for this process (game main window), not the first HWND.
 BOOL CALLBACK EnumWindowsCallback(HWND handle, LPARAM) {
     DWORD wndProcId = 0;
     GetWindowThreadProcessId(handle, &wndProcId);
     if (GetCurrentProcessId() != wndProcId) {
+        return TRUE;
+    }
+    if (!IsWindowVisible(handle)) {
+        return TRUE;
+    }
+    // Skip tiny tool windows / owned popups when a real main window exists.
+    if (GetWindow(handle, GW_OWNER) != nullptr) {
+        return TRUE;
+    }
+    RECT rc{};
+    if (!GetClientRect(handle, &rc) || (rc.right - rc.left) < 100 || (rc.bottom - rc.top) < 100) {
         return TRUE;
     }
     g_window = handle;

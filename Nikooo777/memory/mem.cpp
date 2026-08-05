@@ -172,6 +172,11 @@ std::vector<char *> mem::ScanModComboAll(const char *comboPattern, char *begin, 
         return matches;
     }
 
+    // ScanBasicAll treats the mask as a C string when it determines the
+    // pattern length. Parse() builds a byte vector, so make that contract
+    // explicit before passing the mask across the API boundary.
+    mask.push_back('\0');
+
     return ScanInternalAll(reinterpret_cast<const char *>(pattern.data()),
                            reinterpret_cast<const char *>(mask.data()), begin, size);
 }

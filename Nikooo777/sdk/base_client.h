@@ -32,8 +32,10 @@ public:
     virtual void Function11();
     virtual void Function12();
     virtual void Function13();
-    virtual void Function14();
-    virtual void Function15();
+    // IBaseClientDLL mouse input methods. Source's implementation forwards
+    // these to CInput::ActivateMouse/DeactivateMouse, respectively.
+    virtual void IN_ActivateMouse();
+    virtual void IN_DeactivateMouse();
     virtual void Function16();
     virtual void Function17();
     virtual void Function18();

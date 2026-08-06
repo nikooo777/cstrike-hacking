@@ -6,7 +6,11 @@
 
 namespace hooks {
 
+#if defined(_M_IX86) || defined(__i386__)
 void __fastcall hkFrameStageNotify(void *thisPtr, void * /*edx*/, ClientFrameStage_t curStage) {
+#else
+void hkFrameStageNotify(void *thisPtr, ClientFrameStage_t curStage) {
+#endif
     static Vector3 oldPunch, *pPunch = nullptr;
 
     if (curStage == FRAME_RENDER_START) {

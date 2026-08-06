@@ -2,9 +2,12 @@
 
 #include <iostream>
 
+#include "core/constants.h"
 #include "core/modules.h"
+#include "features/config.h"
 #include "game/entity_list.h"
 #include "game/interfaces.h"
+#include "game/player.h"
 #include "netvars/netvars.h"
 
 namespace features {
@@ -45,19 +48,80 @@ void PrintDebugInfo() {
     PrintNetvar("local m_vecPunchAngle", "DT_Local", "m_vecPunchAngle");
     PrintNetvar("local m_vecPunchAngleVel", "DT_Local", "m_vecPunchAngleVel");
     PrintNetvar("player m_iShotsFired", "DT_CSLocalPlayerExclusive", "m_iShotsFired");
+#if defined(_WIN32) && !defined(_WIN64)
     std::cout << "client-only m_iCrosshairID: 0x" << std::hex << 0x14F0 << std::dec << std::endl;
+#else
+    std::cout << "client-only m_iIDEntIndex (crosshair target): 0x"
+              << std::hex << 0x1B20 << std::dec
+              << " (C_CSPlayer::GetIDTarget)" << std::endl;
+#endif
     const auto clientStateAddress = game::GetClientStateAddress();
     const auto engineBase = core::GetModule("engine.dll");
     std::cout << "clientState addr: 0x" << std::hex << clientStateAddress << std::endl;
     if (clientStateAddress != 0 && engineBase != 0 && clientStateAddress >= engineBase) {
         std::cout << "clientState offset: engine.dll + 0x" << std::hex
-                  << clientStateAddress - engineBase << std::endl;
+                  << clientStateAddress - engineBase << std::dec << std::endl;
     } else {
         std::cout << "clientState offset: unavailable" << std::endl;
     }
+#if defined(_WIN32) && !defined(_WIN64)
     std::cout << "ViewAngles: clientState + 0x4b84" << std::endl;
+#else
+    Vector3 viewAngles{};
+    if (game::GetViewAngles(viewAngles)) {
+        std::cout << "ViewAngles: VEngineClient014::GetViewAngles slot "
+                  << std::dec << kEngineClientGetViewAnglesVtableIndex << " -> "
+                  << viewAngles << std::endl;
+    } else {
+        std::cout << "ViewAngles: VEngineClient014::GetViewAngles unavailable"
+                  << std::endl;
+    }
+#endif
 
-    if (auto *local = game::GetLocalPlayer()) {
+    auto *local = game::GetLocalPlayer();
+    if (local != nullptr) {
+        game::DormancyInfo dormancy;
+        if (game::GetDormancyInfo(local, dormancy)) {
+            std::cout << "local dormant: " << (dormancy.dormant ? "yes" : "no")
+                      << " (interface resolved)" << std::endl;
+        } else {
+            std::cout << "local dormant: unavailable (interface unresolved)"
+                      << std::endl;
+        }
+
+        int validTargets = 0;
+        int readableTargetBones = 0;
+        for (int playerIndex = 1; playerIndex < MAXPLAYERS; ++playerIndex) {
+            auto *target = game::GetPlayer(playerIndex);
+            if (!game::IsValidTarget(local, target)) {
+                continue;
+            }
+
+            ++validTargets;
+            Vector3 headPosition{};
+            if (game::GetBonePosition(target, 14, headPosition)) {
+                ++readableTargetBones;
+            }
+        }
+        std::cout << "aimbot diagnostics: enabled="
+                  << (features::GetConfig().aimbot ? "yes" : "no")
+                  << " validTargets=" << validTargets
+                  << " readableBone14=" << readableTargetBones << std::endl;
+
+        game::BoneCacheInfo boneCache;
+        const bool boneCacheUsable = game::GetBoneCacheInfo(local, boneCache);
+        std::cout << "bone cache: entity=0x" << std::hex
+                  << boneCache.entityAddress << " matrix=0x" << boneCache.matrix
+                  << " count=" << std::dec << boneCache.count
+                  << " matrixReadable=" << (boneCache.matrixReadable ? "yes" : "no")
+                  << " countReadable=" << (boneCache.countReadable ? "yes" : "no")
+                  << " usable=" << (boneCacheUsable ? "yes" : "no")
+                  << " (entity + 0x" << std::hex
+                  << CBasePlayer::kBoneMatrixOffset << ", count + 0x"
+                  << CBasePlayer::kBoneCountOffset << ", "
+                  << "C_BaseAnimating::m_CachedBoneData)"
+                  << std::dec << std::endl;
+
         std::cout << "my position:" << local->m_vecOrigin() << std::endl;
     } else {
         std::cout << "local player: null (not in game?)" << std::endl;

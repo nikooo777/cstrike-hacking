@@ -237,6 +237,10 @@ bool ReadSignature(const Ini &ini, const char *sectionName,
 
     if (!ReadOptionalSize(ini, sectionName, "operand_offset", 0,
                           signature.operandOffset, error) ||
+        !ReadOptionalSize(ini, sectionName, "instruction_offset", 0,
+                          signature.instructionOffset, error) ||
+        !ReadOptionalSize(ini, sectionName, "instruction_length", 0,
+                          signature.instructionLength, error) ||
         !ReadOptionalSize(ini, sectionName, "indirections", 0,
                           signature.indirections, error) ||
         !ReadOptionalBool(ini, sectionName, "required", true,
@@ -254,9 +258,15 @@ bool ReadSignature(const Ini &ini, const char *sectionName,
         return false;
     }
 
-    if (Lower(signature.operand) != "abs32") {
+    const auto operand = Lower(signature.operand);
+    if (operand != "abs32" && operand != "rip_rel32") {
         error = std::string("unsupported operand type for ") + displayName +
                 ": " + signature.operand;
+        return false;
+    }
+    if (operand == "rip_rel32" && signature.instructionLength == 0) {
+        error = std::string("rip_rel32 requires instruction_length for ") +
+                displayName;
         return false;
     }
     return true;
@@ -370,7 +380,9 @@ bool Load(HMODULE selfModule, std::string &error) {
         !ReadSignature(ini, "signature.clientmode", "ClientMode",
                        candidate.clientMode, error) ||
         !ReadInterface(ini, "interface.cliententitylist", "ClientEntityList",
-                       candidate.clientEntityList, error)) {
+                       candidate.clientEntityList, error) ||
+        !ReadInterface(ini, "interface.engineclient", "EngineClient",
+                       candidate.engineClient, error)) {
         return false;
     }
 
@@ -378,8 +390,13 @@ bool Load(HMODULE selfModule, std::string &error) {
         error = "ClientState must use indirections=0";
         return false;
     }
-    if (candidate.clientMode.required && candidate.clientMode.indirections != 1) {
-        error = "ClientMode must use indirections=1";
+    const auto clientModeOperand = Lower(candidate.clientMode.operand);
+    if (candidate.clientMode.required &&
+        ((clientModeOperand == "abs32" &&
+          candidate.clientMode.indirections != 1) ||
+         (clientModeOperand == "rip_rel32" &&
+          candidate.clientMode.indirections != 0))) {
+        error = "ClientMode indirections do not match its operand type";
         return false;
     }
 

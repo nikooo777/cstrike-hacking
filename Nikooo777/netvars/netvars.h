@@ -6,8 +6,9 @@
 
 namespace netvars {
 
-// These declarations mirror the 32-bit Source 1 client-side metadata ABI.
-// They are intentionally data-only: the game owns all pointed-to objects.
+// These declarations mirror the Source 1 client-side metadata ABI. Pointer
+// fields intentionally use pointer types so the same traversal works on x86
+// and x64; netvars.cpp asserts the concrete offsets for each ABI.
 struct RecvTable;
 
 struct ClientClass {

@@ -17,12 +17,16 @@ std::vector<char *> ScanModComboAll(const char *comboPattern, char *begin, intpt
 char *ScanModComboUnique(const char *comboPattern, char *begin, intptr_t size,
                          std::size_t *matchCount = nullptr);
 char *ScanModCombo(const char *comboPattern, char *begin, intptr_t size);
-DWORD GetModuleSize(DWORD processID, const char *module);
+std::size_t GetModuleSize(DWORD processID, const char *module);
 
 bool IsReadable(const void *address, std::size_t size);
 bool IsExecutable(const void *address, std::size_t size = 1);
 bool ReadBytes(const void *address, void *destination, std::size_t size);
 bool DecodeAbs32(const void *instruction, std::size_t operandOffset, std::uintptr_t &value);
+bool DecodeRipRelative32(const void *instruction, std::size_t operandOffset,
+                         std::size_t instructionOffset,
+                         std::size_t instructionLength,
+                         std::uintptr_t &value);
 
 template <typename T>
 bool ReadValue(const void *address, T &value) {

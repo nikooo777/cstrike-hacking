@@ -40,7 +40,7 @@ void Triggerbot(CUserCmd *userCmd) {
 
     if (GetAsyncKeyState(VK_SHIFT) & BUTTON_DOWN) {
         auto aimedTarget = localPlayer->m_iCrosshairID();
-        if (aimedTarget > 0 && aimedTarget < MAXPLAYERS) {
+        if (aimedTarget > 0 && aimedTarget <= MAXPLAYERS) {
             auto target = game::GetPlayer(aimedTarget - 1);
             if (target == nullptr) {
                 Attack1(userCmd, false);

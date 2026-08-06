@@ -18,10 +18,23 @@ namespace netvars {
 
 namespace {
 
-static_assert(sizeof(void *) == 4, "Source 1 netvar metadata is a 32-bit ABI");
-static_assert(offsetof(ClientClass, recvTable) == 12, "Unexpected ClientClass layout");
-static_assert(offsetof(RecvProp, offset) == 44, "Unexpected RecvProp layout");
-static_assert(offsetof(RecvTable, name) == 12, "Unexpected RecvTable layout");
+#if defined(_WIN64) || defined(_M_X64) || defined(__x86_64__)
+static_assert(sizeof(void *) == 8, "Expected the x64 netvar metadata ABI");
+static_assert(offsetof(ClientClass, recvTable) == 24,
+              "Unexpected x64 ClientClass layout");
+static_assert(offsetof(RecvProp, offset) == 72,
+              "Unexpected x64 RecvProp layout");
+static_assert(offsetof(RecvTable, name) == 24,
+              "Unexpected x64 RecvTable layout");
+#else
+static_assert(sizeof(void *) == 4, "Expected the x86 netvar metadata ABI");
+static_assert(offsetof(ClientClass, recvTable) == 12,
+              "Unexpected x86 ClientClass layout");
+static_assert(offsetof(RecvProp, offset) == 44,
+              "Unexpected x86 RecvProp layout");
+static_assert(offsetof(RecvTable, name) == 12,
+              "Unexpected x86 RecvTable layout");
+#endif
 
 constexpr std::size_t kMaxClientClasses = 4096;
 constexpr int kMaxRecvProps = 8192;

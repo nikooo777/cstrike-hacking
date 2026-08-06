@@ -37,8 +37,16 @@ public:
     DEFINE_MEMBER(int, m_bHasDefuser, 0x14A8);
     DEFINE_MEMBER(int, m_bInHostageRescueZone, 0x14A9);
     DEFINE_MEMBER(Vector3, m_vecRagdollVelocity, 0x14B4);
-    // No RecvProp in the current client sample; verified client-only access.
+#if defined(_WIN64) || defined(_M_X64) || defined(__x86_64__)
+    // C_CSPlayer::GetIDTarget reads the client-only current target here in
+    // the current x64 client. It is not a RecvProp, so netvar lookup cannot
+    // discover it.
+    DEFINE_MEMBER(int, m_iIDEntIndex, 0x1B20);
+    int m_iCrosshairID() const { return m_iIDEntIndex(); }
+#else
+    // No RecvProp in the x86 client sample; verified client-only access.
     DEFINE_MEMBER(int, m_iCrosshairID, 0x14F0);
+#endif
     DEFINE_MEMBER(int, m_cycleLatch, 0x1570);
 
     bool *m_bPlayerDominated() {

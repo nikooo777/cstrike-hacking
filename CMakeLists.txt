@@ -1,14 +1,21 @@
 cmake_minimum_required(VERSION 3.19)
-project(cstrike_hax LANGUAGES CXX)
+project(cstrike_hax LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# CS:S is 32-bit. Prefer MSVC Win32 (matches MinHook v141 x86 libs).
-# CLion's bundled MinGW is typically x86_64-only and cannot produce a CSS inject DLL.
+# The current game build is x64, but keeping the x86 profile makes the ABI
+# change easy to compare while following the earlier tutorial chapters.
 if (CMAKE_SIZEOF_VOID_P EQUAL 8)
-    message(WARNING "This is a 64-bit toolchain. CS:S needs a 32-bit (Win32/x86) DLL. "
-                    "Use VS Build Tools: vcvarsall x86, or a CLion MSVC Win32 profile.")
+    set(NIKOOO777_ARCH x64)
+    set(NIKOOO777_SIGNATURE_CONFIG
+        "${CMAKE_SOURCE_DIR}/config/signatures-x64.ini")
+    add_compile_definitions(NIKOOO777_ARCH_X64=1)
+else()
+    set(NIKOOO777_ARCH x86)
+    set(NIKOOO777_SIGNATURE_CONFIG
+        "${CMAKE_SOURCE_DIR}/config/signatures.ini")
+    add_compile_definitions(NIKOOO777_ARCH_X86=1)
 endif()
 
 # DirectX SDK (June 2010) — override with -DDXSDK_DIR=... if installed elsewhere.
@@ -59,27 +66,45 @@ set(IMGUI_SOURCES
 
 add_library(nikooo777 SHARED ${NIKOOO777_SOURCES} ${IMGUI_SOURCES})
 
+# Build MinHook from source for the selected architecture. The repository used
+# to carry only prebuilt x86 libraries, which made an x64 build impossible and
+# made the result depend on one particular MSVC runtime configuration.
+if (CMAKE_SIZEOF_VOID_P EQUAL 8)
+    set(MINHOOK_HDE minhook/src/hde/hde64.c)
+else()
+    set(MINHOOK_HDE minhook/src/hde/hde32.c)
+endif()
+
+add_library(minhook STATIC
+    minhook/src/buffer.c
+    minhook/src/hook.c
+    minhook/src/trampoline.c
+    ${MINHOOK_HDE}
+)
+
+target_include_directories(minhook PUBLIC
+    ${CMAKE_SOURCE_DIR}/minhook/include
+)
+target_include_directories(minhook PRIVATE
+    ${CMAKE_SOURCE_DIR}/minhook/src
+    ${CMAKE_SOURCE_DIR}/minhook/src/hde
+)
+
 target_include_directories(nikooo777 PRIVATE
     ${CMAKE_SOURCE_DIR}/Nikooo777
-    ${CMAKE_SOURCE_DIR}/minhook/includes
+    ${CMAKE_SOURCE_DIR}/minhook/include
     ${CMAKE_SOURCE_DIR}/imgui
     ${DXSDK_DIR}/Include
 )
 
 configure_file(
-    "${CMAKE_SOURCE_DIR}/config/signatures.ini"
+    "${NIKOOO777_SIGNATURE_CONFIG}"
     "${CMAKE_CURRENT_BINARY_DIR}/signatures.ini"
     COPYONLY
 )
 
-# Debug CRT MinHook by default (matches previous setup).
-set(MINHOOK_LIB "${CMAKE_SOURCE_DIR}/minhook/lib/libMinHook-x86-v141-mdd.lib")
-if (CMAKE_BUILD_TYPE STREQUAL "Release")
-    set(MINHOOK_LIB "${CMAKE_SOURCE_DIR}/minhook/lib/libMinHook-x86-v141-md.lib")
-endif()
-
 # d3d9 only — ImGui's DX9 backend does not need d3dx9.
 target_link_libraries(nikooo777 PRIVATE
-    ${MINHOOK_LIB}
-    ${DXSDK_DIR}/Lib/x86/d3d9.lib
+    minhook
+    ${DXSDK_DIR}/Lib/${NIKOOO777_ARCH}/d3d9.lib
 )

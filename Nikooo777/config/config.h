@@ -13,6 +13,8 @@ struct Signature {
     std::string pattern;
     std::string operand;
     std::size_t operandOffset = 0;
+    std::size_t instructionOffset = 0;
+    std::size_t instructionLength = 0;
     std::size_t indirections = 0;
     bool required = true;
     bool validateVtable = false;
@@ -58,6 +60,7 @@ struct Config {
     Signature clientState;
     Signature clientMode;
     Interface clientEntityList;
+    Interface engineClient;
 };
 
 bool Load(HMODULE selfModule, std::string &error);

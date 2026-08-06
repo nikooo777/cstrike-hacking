@@ -12,7 +12,11 @@
 
 namespace hooks {
 
+#if defined(_M_IX86) || defined(__i386__)
 bool __fastcall hkCreateMove(void *thisPtr, void * /*edx*/, float flInputSampleTime, CUserCmd *userCmd) {
+#else
+bool hkCreateMove(void *thisPtr, float flInputSampleTime, CUserCmd *userCmd) {
+#endif
     const bool result = originalCreateMove(thisPtr, flInputSampleTime, userCmd);
     if (userCmd == nullptr) {
         return result;

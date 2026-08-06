@@ -292,7 +292,62 @@ bool mem::DecodeAbs32(const void *instruction, std::size_t operandOffset,
     return true;
 }
 
-DWORD mem::GetModuleSize(DWORD processID, const char *module) {
+bool mem::DecodeRipRelative32(const void *instruction,
+                              std::size_t operandOffset,
+                              std::size_t instructionOffset,
+                              std::size_t instructionLength,
+                              std::uintptr_t &value) {
+    if (instruction == nullptr || instructionLength == 0 ||
+        operandOffset < instructionOffset ||
+        operandOffset - instructionOffset > instructionLength ||
+        instructionLength - (operandOffset - instructionOffset) <
+            sizeof(std::int32_t)) {
+        return false;
+    }
+
+    const auto signatureAddress = reinterpret_cast<std::uintptr_t>(instruction);
+    if (instructionOffset >
+        std::numeric_limits<std::uintptr_t>::max() - signatureAddress) {
+        return false;
+    }
+    const auto instructionAddress = signatureAddress + instructionOffset;
+    if (instructionLength >
+        std::numeric_limits<std::uintptr_t>::max() - instructionAddress) {
+        return false;
+    }
+    if (operandOffset >
+        std::numeric_limits<std::uintptr_t>::max() - signatureAddress) {
+        return false;
+    }
+
+    std::int32_t displacement = 0;
+    if (!ReadValue(reinterpret_cast<const void *>(signatureAddress + operandOffset),
+                   displacement)) {
+        return false;
+    }
+
+    const auto nextInstruction = instructionAddress + instructionLength;
+    if (displacement >= 0) {
+        const auto positive = static_cast<std::uintptr_t>(displacement);
+        if (positive > std::numeric_limits<std::uintptr_t>::max() -
+                           nextInstruction) {
+            return false;
+        }
+        value = nextInstruction + positive;
+        return true;
+    }
+
+    // Avoid negating INT32_MIN in a signed type.
+    const auto magnitude = static_cast<std::uintptr_t>(
+        -(static_cast<std::int64_t>(displacement)));
+    if (magnitude > nextInstruction) {
+        return false;
+    }
+    value = nextInstruction - magnitude;
+    return true;
+}
+
+std::size_t mem::GetModuleSize(DWORD processID, const char *module) {
     HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, processID);
     if (hSnap == INVALID_HANDLE_VALUE) {
         return 0;
@@ -304,7 +359,7 @@ DWORD mem::GetModuleSize(DWORD processID, const char *module) {
         do {
             if (_stricmp(reinterpret_cast<const char *>(xModule.szModule), module) == 0) {
                 CloseHandle(hSnap);
-                return static_cast<DWORD>(xModule.modBaseSize);
+                return static_cast<std::size_t>(xModule.modBaseSize);
             }
         } while (Module32Next(hSnap, &xModule));
     }

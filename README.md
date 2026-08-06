@@ -1,6 +1,6 @@
 # Source engine reverse-engineering tutorial
 
-Learn how Counter-Strike: Source fits together by building a small **32-bit internal experiment DLL**. This is a personal reverse-engineering and systems exercise, not a ready-to-use product.
+Learn how Counter-Strike: Source fits together by building a small **x86/x64 internal experiment DLL**. This is a personal reverse-engineering and systems exercise, not a ready-to-use product.
 
 > **Safety note:** Use this only for source study and permitted, offline/local testing. There is no VAC bypass, anti-cheat defeat, injector, or online-testing workflow here. Do not load it into protected multiplayer or someone else's process.
 
@@ -21,19 +21,19 @@ The first guide I used was [Guided Hacking's beginner guide](https://guidedhacki
 
 ## What works today
 
-This is a teaching codebase tied to one Counter-Strike: Source client build. It currently builds a DLL with CMake and MSVC x86 and contains these experiments:
+This is a teaching codebase tied to one Counter-Strike: Source client build. It builds architecture-specific DLLs with CMake and MSVC and contains these experiments:
 
 | Experiment | Hook / input | Implementation |
 |------------|--------------|----------------|
 | Bunny hop | `CreateMove` / hold **Space** | `features/bhop.cpp` writes the client's force-jump command. |
-| Aimbot | `CreateMove` / hold **LMB** | `features/aimbot.cpp` chooses the closest valid enemy and aims at bone 14. |
-| Triggerbot | `CreateMove` / hold **Shift** | `features/triggerbot.cpp` uses the crosshair entity ID and fires only for a valid, grounded target. |
+| Aimbot | `CreateMove` / hold **LMB** | `features/aimbot.cpp` chooses the closest valid enemy and aims at bone 14; x64 target validation uses `IClientNetworkable::IsDormant`. |
+| Triggerbot | `CreateMove` / hold **Shift** | `features/triggerbot.cpp` uses the client-only crosshair target (`m_iIDEntIndex`); the x64 field is `player + 0x1B20`, but the x64 profile keeps the feature off until its complete input/target path is validated. |
 | Command no-recoil | `CreateMove` | `features/norecoil.cpp` compensates view angles using the local punch angle. |
 | Visual no-recoil | `FrameStageNotify` | Temporarily hides the punch angle during `FRAME_RENDER_START`, then restores it. |
 | ImGui menu | `EndScene` + window procedure | `features/menu.cpp` exposes runtime toggles and is opened with **Insert**. |
-| Debug dump | `CreateMove` / **F1** | `features/debug_info.cpp` prints module bases, offsets, client state, and local position. |
+| Debug dump | `CreateMove` / **F1** | `features/debug_info.cpp` prints module bases, offsets, client state, local dormancy, target counts, bone-cache state, and local position. |
 
-All gameplay experiments start enabled by default; the menu itself starts closed. MinHook installs `CreateMove`, `FrameStageNotify`, and D3D9 `EndScene`. The window procedure is replaced separately so **Insert** works even when `CreateMove` is not running.
+The x86 profile starts all gameplay experiments enabled; the x64 profile now enables the aimbot after validating `IClientNetworkable::IsDormant`, while triggerbot remains disabled. The x64 `C_BaseAnimating::SetupBones` cache fields are reached through the renderable subobject: Ghidra shows `[this + 0xB40]`/`[this + 0xB50]`, which translate to a matrix pointer at `entity + 0xB48` and a count at `entity + 0xB58` from the entity-list pointer. The corrected path has been runtime-validated on the current x64 build (`count=50`, readable and usable); the F1 dump continues to report the raw values and readability flags so future updates can be checked. The menu itself starts closed. MinHook installs `CreateMove`, `FrameStageNotify`, and D3D9 `EndScene`. The window procedure is replaced separately so **Insert** works even when `CreateMove` is not running.
 
 ### In-game controls
 
@@ -79,16 +79,16 @@ Nikooo777/
   netvars/                 # runtime ClientClass/RecvTable/RecvProp resolver
   sdk/                     # Source-like types only (no feature logic)
     entity/                # CLocal, CBasePlayer, CCSPlayer
-    user_cmd.h, client_*.h, client_entity_list.h, create_interface.*
+    user_cmd.h, client_*.h, engine_client.h, client_entity_list.h, create_interface.*
   game/                    # live game access
     entity_list.*          # local player + IClientEntityList access
-    interfaces.*           # interfaces, ClientMode / ClientState / BaseClient resolve
+    interfaces.*           # interfaces, EngineClient / ClientMode / ClientState resolve
     player.*               # IsAlive, IsEnemy, IsValidTarget, EyePosition
   hooks/                   # MinHook lifecycle + individual hooks + dummy D3D device
   features/                # gameplay logic + menu + config flags
 imgui/                     # Dear ImGui + DX9 / Win32 backends
-minhook/                   # headers + prebuilt x86 libs (v141)
-config/                    # signatures.ini patterns, settings, and provenance
+minhook/                   # vendored source, headers, license, and legacy x86 libs
+config/                    # architecture-specific signatures, settings, provenance
 ```
 
 ### Layer rules (keep the tutorial readable)
@@ -100,8 +100,11 @@ config/                    # signatures.ini patterns, settings, and provenance
 5. **`dllmain.cpp`** — attach / detach only.
 
 Networked entity members use runtime `RecvTable` accessors (`DEFINE_NETVAR`) so their
-displacements come from the loaded client metadata. Client-only fields and the
-remaining padded layout still use explicit offsets, while entity lookup and input
+displacements come from the loaded client metadata. Client-only fields are kept
+explicit only after they are verified for the selected architecture; the x64
+crosshair target is the `C_CSPlayer::GetIDTarget` field at `player + 0x1B20`.
+View angles are read through the named `VEngineClient` interface at vtable slot
+19 instead of a copied x64 `ClientState` overlay. Entity lookup and input
 buttons use the named interface/command sources documented in `aidocs/003`.
 
 ### Where to add something new
@@ -112,24 +115,29 @@ buttons use the named interface/command sources documented in `aidocs/003`.
 | Networked player / entity field | Resolve and add its `RecvTable` path in `sdk/entity/` with `DEFINE_NETVAR`; document the discovery in `aidocs/002_netvars-and-entity-offsets.md`. |
 | Client-only entity field | `sdk/entity/` with `DEFINE_MEMBER`, after verifying that it is not in a receive table. |
 | Global address or input slot | Prefer a named interface or `CUserCmd`; document a true signature in `aidocs/003_global-addresses-and-inputs.md` when no semantic source exists. |
-| New interface / signature | Add the pattern, operand rule, and provenance to `config/signatures.ini`; keep resolution logic in `game/interfaces.cpp` and explain discovery in `aidocs/`. |
+| New interface / signature | Add the pattern, operand rule, and provenance to the matching architecture profile (`config/signatures.ini` for x86 or `config/signatures-x64.ini` for x64); keep resolution logic in `game/interfaces.cpp` and explain discovery in `aidocs/`. |
 | Shared target / eye helpers | `game/player.*` |
 
 ## Building
 
 ### Requirements
 
-- **Windows**, target **Win32 (x86)** — CS:S is a 32-bit process; a 64-bit DLL will not load correctly
+- **Windows**, with an MSVC profile matching the target game process: x86 for the legacy client or x64 for the updated client
 - **CMake** ≥ 3.19
-- **MSVC** with a Win32 toolset (VS 2019 Build Tools work; MinHook libs are `v141` x86)
+- **MSVC** with a toolset matching the selected architecture (VS 2019 Build Tools work)
 - **[DirectX SDK (June 2010)](https://www.microsoft.com/en-us/download/details.aspx?id=6812)** — `d3d9` only (ImGui’s DX9 backend does not need D3DX). Default path in CMake; override with `-DDXSDK_DIR=...`
 - **C++17**
 
-Dear ImGui and the MinHook headers/libraries are included in the repository, so no package manager is required. The CMake file links only `d3d9`; ImGui’s DX9 backend does not require D3DX.
+Dear ImGui and the MinHook source/headers are included in the repository, so no package manager is required. The CMake file links only `d3d9`; ImGui’s DX9 backend does not require D3DX.
 
-The MinHook libraries in `minhook/lib/` are prebuilt x86 `v141` libraries. VS 2019 Build Tools are the baseline used here; a compatible newer MSVC toolset should also use an x86/Win32 profile.
+MinHook is built from the vendored source for the selected pointer size. The old
+prebuilt x86 libraries remain in `minhook/lib/` as historical reference, but
+the CMake target no longer depends on them. VS 2019 Build Tools are the baseline
+used here; a compatible newer MSVC toolset should also work.
 
-For CLion, select an **MSVC x86** CMake profile. Its bundled MinGW toolchain is usually x86_64-only and will not produce a proper CS:S DLL. With Visual Studio, choose the Win32 platform.
+For CLion, select an **MSVC x86 or x64** CMake profile matching the game. Its
+bundled MinGW toolchain is not the baseline for this Windows DLL. With Visual
+Studio, choose the platform that matches the loaded game.
 
 ### MSVC x86 command line
 
@@ -152,7 +160,7 @@ If the DirectX SDK is installed elsewhere, point DXSDK_DIR at its root directory
 cmake -S . -B build-msvc-x86 -G "NMake Makefiles" -DCMAKE_BUILD_TYPE=Debug -DDXSDK_DIR="D:/SDKs/DirectX SDK (June 2010)"
 ```
 
-Debug output: `build-msvc-x86/nikooo777.dll` (links `libMinHook-x86-v141-mdd.lib`).
+Debug output: `build-msvc-x86/nikooo777.dll`.
 
 The build also copies `config/signatures.ini` to `build-msvc-x86/signatures.ini`, beside the DLL. Edit the checked-in file, then rebuild before testing a new binary.
 
@@ -164,13 +172,28 @@ cmake -S . -B build-msvc-x86-release -G "NMake Makefiles" -DCMAKE_BUILD_TYPE=Rel
 cmake --build build-msvc-x86-release --target nikooo777
 ```
 
-The single-config Release command selects the non-debug MinHook library. For a multi-configuration Visual Studio generator, use `cmake --build <build-dir> --config Debug` or `--config Release`; the current CMake file chooses MinHook from `CMAKE_BUILD_TYPE`, so verify that link before building Release. Use a fresh build directory when switching architectures.
+MinHook is compiled in the selected configuration. For a multi-configuration Visual Studio generator, use `cmake --build <build-dir> --config Debug` or `--config Release`. Use a fresh build directory when switching architectures.
+
+### MSVC x64 command line
+
+The updated game uses the x64 module set. Open an x64 Native Tools Command Prompt
+or initialize it from a regular prompt:
+
+```bat
+call "C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Auxiliary\Build\vcvarsall.bat" x64
+cmake -S . -B build-msvc-x64 -G "NMake Makefiles" -DCMAKE_BUILD_TYPE=Debug
+cmake --build build-msvc-x64 --target nikooo777
+```
+
+This selects `Lib/x64/d3d9.lib`, builds the x64 MinHook sources, and copies
+`config/signatures-x64.ini` to `build-msvc-x64/signatures.ini`. Do not reuse an
+x86 build directory when changing pointer size.
 
 ## Permitted offline smoke test
 
 This repository does not provide a standalone executable, injector, or anti-cheat workaround. For a local test environment you control:
 
-1. Build the DLL for Win32/x86.
+1. Build the DLL for the same architecture as the target game process.
 2. Start a permitted offline or local Counter-Strike: Source session.
 3. Load the DLL using an injector you already trust and are authorized to use.
 4. Check the console for `BaseClient`, `Netvars initialized`, `ClientEntityList`, `ClientMode`, `FrameStageNotify`, `CreateMove`, and `EndScene` addresses.
@@ -189,35 +212,39 @@ These are the files to revisit when the client build changes:
 | `netvars/netvars.*` | Runtime `ClientClass`/`RecvTable` traversal and entity-relative offsets. |
 | `sdk/client_entity_list.h` / `game/entity_list.cpp` | Named `VClientEntityList003` interface and player-slot translation. |
 | `sdk/entity/*.h` | Netvar-backed entity accessors plus explicitly client-only fields and the remaining padded layout. |
-| `config/signatures.ini` | Runtime patterns, module names, operand offsets, pointer indirections, validation settings, feature defaults, and discovery links. |
-| `game/interfaces.cpp` | `CreateInterface` lookup plus configured entity-list, ClientState, and ClientMode resolution logic. |
+| `config/signatures.ini` / `config/signatures-x64.ini` | Architecture-specific patterns, named interfaces, operand decoders, pointer indirections, validation settings, feature defaults, and discovery links. |
+| `game/interfaces.cpp` | `CreateInterface` lookup plus configured entity-list, EngineClient, ClientState, and ClientMode resolution logic. |
 | `hooks/hooks.cpp` | Vtable slots for `CreateMove`, `FrameStageNotify`, and `EndScene`. |
 | `core/constants.h` | Entity stride, player limits, team values, and movement flags. |
 
-The debug dump reports module bases, runtime interface/client-only offsets, resolved netvar offsets, the resolved ClientState address, and the local player position when one is available. If a signature or required netvar is not found, or a read produces null/garbage data, treat the binary and the offsets as mismatched and re-dump them rather than guessing.
+The debug dump reports module bases, runtime interface/client-only offsets, resolved netvar offsets, the resolved ClientState address, view angles from `VEngineClient`, the local bone-cache pointer/count, and the local player position when one is available. If a signature or required netvar is not found, or a read produces null/garbage data, treat the binary and the offsets as mismatched and re-dump them rather than guessing.
 
 ## Tutorial notes
 
 - [001 - Signature scanning, offsets, and pointer derivation](aidocs/001_signature-scanning-and-offsets.md)
 - [002 - Netvars and entity offsets](aidocs/002_netvars-and-entity-offsets.md)
 - [003 - Global addresses, interfaces, and input commands](aidocs/003_global-addresses-and-inputs.md)
+- [004 - x64 migration and ABI](aidocs/004_x64-migration-and-abi.md)
 
-`config/signatures.ini` is the source of truth for the two current runtime signatures and the client entity-list interface. It intentionally records how each pattern or interface was found, not just the bytes: update the provenance fields whenever a new build is reverse-engineered.
+The architecture-selected signature profile is the source of truth for the two
+runtime signatures and the named client/engine interfaces. It intentionally
+records how each pattern or interface was found, not just the bytes: update the
+provenance fields whenever a new build is reverse-engineered.
 
 ## Troubleshooting
 
 | Symptom | Likely cause / next check |
 |---------|---------------------------|
-| CMake warns about a 64-bit toolchain | Select an MSVC **x86/Win32** toolchain and configure a new build directory. |
-| `d3d9.h` or `d3d9.lib` is missing | Set `DXSDK_DIR` to the DirectX SDK root and verify Include/d3d9.h plus Lib/x86/d3d9.lib exist. |
-| A MinHook library cannot be opened | Use the matching x86 library in minhook/lib/; Debug selects mdd, Release selects md for the single-config command above. |
-| `signatures.ini` cannot be loaded | Build from the repository so CMake copies `config/signatures.ini` beside the DLL; do not launch with a stale or missing adjacent config. |
+| CMake selects the wrong architecture | Check `CMAKE_SIZEOF_VOID_P`, initialize the matching MSVC environment, and configure a fresh build directory. |
+| `d3d9.h` or `d3d9.lib` is missing | Set `DXSDK_DIR` to the DirectX SDK root and verify Include/d3d9.h plus `Lib/x86/d3d9.lib` or `Lib/x64/d3d9.lib` exist. |
+| A MinHook library cannot be opened | MinHook is built from source; reconfigure after adding the vendored `minhook/src` files and inspect the selected C/C++ toolchain. |
+| `signatures.ini` cannot be loaded | Build from the repository so CMake copies the architecture-selected profile beside the DLL; do not launch with a stale or missing adjacent config. |
 | `ClientState signature not found` or `ClientMode signature not found` | The byte pattern is for another client build. Confirm the executable/module version and update the pattern. |
 | `BaseClient is null` | `VClient017` was not exposed by the loaded client module, or the DLL was loaded at the wrong time/process. |
-| `ClientEntityList interface not found` | `VClientEntityList003` is unavailable or the configured client module is wrong. Re-check the interface name and the 32-bit ABI. |
-| `Failed to initialize netvars` | `GetAllClasses`, a required RecvTable, or a required property does not match this client build. Stop and re-check the table path and 32-bit ABI. |
+| `ClientEntityList interface not found` | `VClientEntityList003` is unavailable or the configured client module is wrong. Re-check the interface name and the selected ABI. |
+| `Failed to initialize netvars` | `GetAllClasses`, a required RecvTable, or a required property does not match this client build. Stop and re-check the table path and pointer-width assertions. |
 | D3D9 capture fails or the menu never appears | The code needs a visible, suitably sized game window and a D3D9 device. Wait until the game window is initialized and verify that the target is using D3D9. |
-| A feature crashes or reads implausible values | Stop testing: an entity/global offset is stale or the target is not the expected 32-bit build. |
+| A feature crashes or reads implausible values | Stop testing: an entity/global offset is stale or the target is not the expected architecture/build. Disable the feature and return to Ghidra. |
 
 ## Known limitations
 
@@ -225,9 +252,9 @@ The debug dump reports module bases, runtime interface/client-only offsets, reso
 - Netvars remove several hardcoded entity displacements, but the `ClientClass`/`RecvTable` ABI, table names, property names, and type assumptions are still build-family dependencies.
 - Memory access is direct and lightly validated; this is experimental code, not a hardened runtime.
 - The aimbot is intentionally basic: closest valid target, bone 14, and an immediate angle change. It does not implement visibility checks, smoothing, weapon handling, or movement correction.
-- The triggerbot is deliberately narrow: it uses the crosshair ID and requires the local player to be on the ground.
+- The triggerbot is deliberately narrow: it uses the client-only crosshair target ID and requires the local player to be on the ground.
 - Rendering support is D3D9-specific and depends on finding the game's visible top-level window.
-- There is no automated test suite; validation is a successful x86 build followed by a permitted local smoke test.
+- There is no automated test suite; validation is a successful architecture-matched build followed by a permitted local smoke test.
 - Nothing here is intended to bypass VAC, FaceIT, or any other anti-cheat system.
 
 ## Videos / notes while reversing
@@ -238,7 +265,7 @@ The debug dump reports module bases, runtime interface/client-only offsets, reso
 | Finding view angles | [Odysee](https://odysee.com/@Swiss-Experiments:a/finding-viewangles-with-ida-for-counter:e) · [YouTube](https://www.youtube.com/watch?v=mS8ZQ5N7Dvk) |
 | Finding bone matrix | [Odysee](https://odysee.com/@Swiss-Experiments:a/how-to-locate-bonematrix:5) · [YouTube](https://www.youtube.com/watch?v=elKUMiqitxY) |
 
-Remaining client-only offsets in the entity headers are for the client build this project was developed against. If your CS:S binary differs, re-dump them or replace them with a stronger source of truth.
+Remaining client-only offsets in the entity headers are for the client build this project was developed against. The x64 bone-cache offsets documented in `aidocs/004` came from the current `SetupBones` implementation, but they still need to be re-dumped if the binary changes.
 
 The signature records point back to this section and the numbered tutorial so the pattern bytes, operand offsets, and pointer-chain assumptions can be re-derived instead of copied blindly.
 

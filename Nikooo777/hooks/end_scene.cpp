@@ -261,7 +261,11 @@ void ShutdownImGui() {
 
 } // namespace
 
+#if defined(_M_IX86) || defined(__i386__)
 HRESULT __stdcall hkEndScene(IDirect3DDevice9 *device) {
+#else
+HRESULT hkEndScene(IDirect3DDevice9 *device) {
+#endif
     PollMenuToggle();
     SetMenuInputMode(features::GetConfig().menuOpen);
     InitImGui(device);

@@ -2,6 +2,9 @@
 
 #include <iostream>
 #include <cstddef>
+#include <cctype>
+#include <limits>
+#include <string>
 
 #include "core/modules.h"
 #include "config/config.h"
@@ -16,6 +19,7 @@ ClientState *g_clientState = nullptr;
 ClientMode *g_clientMode = nullptr;
 BaseClient *g_baseClient = nullptr;
 IClientEntityList *g_clientEntityList = nullptr;
+EngineClient *g_engineClient = nullptr;
 std::uintptr_t g_clientStateAddr = 0;
 
 char *FindUniqueSignature(const config::Signature &signature,
@@ -29,7 +33,7 @@ char *FindUniqueSignature(const config::Signature &signature,
     const auto &runtime = config::Get();
     const DWORD pid = GetProcessId(GetCurrentProcess());
     const auto moduleBase = core::GetModule(signature.module.c_str());
-    const DWORD moduleSize = mem::GetModuleSize(pid, signature.module.c_str());
+    const auto moduleSize = mem::GetModuleSize(pid, signature.module.c_str());
     if (moduleBase == 0 || moduleSize == 0) {
         std::cout << signature.name << ": module unavailable ("
                   << signature.module << ")" << std::endl;
@@ -90,14 +94,57 @@ char *FindUniqueSignature(const config::Signature &signature,
     return match;
 }
 
-bool HasUsableVtable(const void *instance) {
+bool HasUsableVtableSlot(const void *instance, std::size_t slot) {
     auto *vtable = mem::ReadPointer<void>(instance);
     if (vtable == nullptr || !mem::IsReadable(vtable, sizeof(void *))) {
         return false;
     }
 
-    auto *firstFunction = mem::ReadPointer<void>(vtable);
-    return firstFunction != nullptr && mem::IsExecutable(firstFunction);
+    const auto vtableAddress = reinterpret_cast<std::uintptr_t>(vtable);
+    if (slot > ((std::numeric_limits<std::uintptr_t>::max)() -
+                vtableAddress) / sizeof(void *)) {
+        return false;
+    }
+
+    const auto slotAddress = vtableAddress + slot * sizeof(void *);
+    if (!mem::IsReadable(reinterpret_cast<const void *>(slotAddress),
+                         sizeof(void *))) {
+        return false;
+    }
+
+    void *function = nullptr;
+    if (!mem::ReadValue(reinterpret_cast<const void *>(slotAddress),
+                        function)) {
+        return false;
+    }
+    return function != nullptr && mem::IsExecutable(function);
+}
+
+bool HasUsableVtable(const void *instance) {
+    return HasUsableVtableSlot(instance, 0);
+}
+
+bool DecodeConfiguredOperand(const char *name, char *scan,
+                             const config::Signature &signature,
+                             std::uintptr_t &value) {
+    std::string operand = signature.operand;
+    for (char &character : operand) {
+        character = static_cast<char>(
+            std::tolower(static_cast<unsigned char>(character)));
+    }
+
+    if (operand == "abs32") {
+        return mem::DecodeAbs32(scan, signature.operandOffset, value);
+    }
+    if (operand == "rip_rel32") {
+        return mem::DecodeRipRelative32(
+            scan, signature.operandOffset, signature.instructionOffset,
+            signature.instructionLength, value);
+    }
+
+    std::cout << name << " has unsupported operand type: "
+              << signature.operand << std::endl;
+    return false;
 }
 
 } // namespace
@@ -121,10 +168,15 @@ ClientState *GetClientState() {
     }
 
     std::uintptr_t stateAddress = 0;
-    if (!mem::DecodeAbs32(scan, signature.operandOffset, stateAddress) ||
+    if (!DecodeConfiguredOperand("ClientState", scan, signature,
+                                stateAddress) ||
         stateAddress == 0) {
         std::cout << "ClientState operand could not be decoded" << std::endl;
         return nullptr;
+    }
+    if (config::Get().settings.logMatchOffsets) {
+        std::cout << "ClientState decoded target: 0x" << std::hex
+                  << stateAddress << std::dec << std::endl;
     }
 
     auto *clientState = reinterpret_cast<ClientState *>(stateAddress);
@@ -152,21 +204,25 @@ ClientMode *GetClientMode() {
     }
     // Pattern points at `mov ecx, [g_pClientMode]` — +2 skips opcode/modrm to the absolute address.
     // Decode 8B 0D imm32 as a global-slot address, then read ClientMode* from that slot.
-    if (signature.indirections != 1) {
-        std::cout << "ClientMode signature must describe one pointer indirection"
-                  << std::endl;
-        return nullptr;
-    }
-
-    std::uintptr_t globalSlot = 0;
-    if (!mem::DecodeAbs32(scan, signature.operandOffset, globalSlot) ||
-        globalSlot == 0) {
+    std::uintptr_t clientModeAddress = 0;
+    if (!DecodeConfiguredOperand("ClientMode", scan, signature,
+                                clientModeAddress) ||
+        clientModeAddress == 0) {
         std::cout << "ClientMode operand could not be decoded" << std::endl;
         return nullptr;
     }
 
-    auto *clientMode =
-        mem::ReadPointer<ClientMode>(reinterpret_cast<const void *>(globalSlot));
+    ClientMode *clientMode = nullptr;
+    if (signature.indirections == 0) {
+        clientMode = reinterpret_cast<ClientMode *>(clientModeAddress);
+    } else if (signature.indirections == 1) {
+        clientMode = mem::ReadPointer<ClientMode>(
+            reinterpret_cast<const void *>(clientModeAddress));
+    } else {
+        std::cout << "ClientMode signature has unsupported pointer depth"
+                  << std::endl;
+        return nullptr;
+    }
     if (clientMode == nullptr ||
         (config::Get().settings.validatePointers &&
          signature.validateVtable && !HasUsableVtable(clientMode))) {
@@ -225,6 +281,81 @@ IClientEntityList *GetClientEntityList() {
     std::cout << "ClientEntityList: " << definition.name << " at 0x"
               << std::hex << g_clientEntityList << std::dec << std::endl;
     return g_clientEntityList;
+}
+
+EngineClient *GetEngineClient() {
+    if (g_engineClient != nullptr) {
+        return g_engineClient;
+    }
+    if (!config::IsLoaded()) {
+        std::cout << "EngineClient: config not loaded" << std::endl;
+        return nullptr;
+    }
+
+    const auto &definition = config::Get().engineClient;
+    g_engineClient = static_cast<EngineClient *>(
+        GetInterface(definition.module.c_str(), definition.name.c_str()));
+    if (g_engineClient == nullptr) {
+        std::cout << "EngineClient interface not found: "
+                  << definition.name << std::endl;
+        return nullptr;
+    }
+
+    if (config::Get().settings.validatePointers &&
+        !HasUsableVtableSlot(
+            g_engineClient, kEngineClientGetViewAnglesVtableIndex)) {
+        std::cout << "EngineClient GetViewAngles vtable slot is not usable"
+                  << std::endl;
+        g_engineClient = nullptr;
+        return nullptr;
+    }
+
+    if (config::Get().settings.logMatchOffsets) {
+        std::cout << "EngineClient source: " << definition.source
+                  << std::endl;
+        if (!definition.sourceReadme.empty()) {
+            std::cout << "EngineClient README: "
+                      << definition.sourceReadme << std::endl;
+        }
+        std::cout << "EngineClient discovery: "
+                  << definition.discovery << std::endl;
+    }
+    std::cout << "EngineClient: " << definition.name << " at 0x"
+              << std::hex << g_engineClient << std::dec << std::endl;
+    return g_engineClient;
+}
+
+bool GetViewAngles(Vector3 &angles) {
+    auto *engineClient = GetEngineClient();
+    if (engineClient == nullptr) {
+        return false;
+    }
+
+    auto *vtable = mem::ReadPointer<void>(engineClient);
+    if (vtable == nullptr) {
+        return false;
+    }
+
+    const auto slot = static_cast<std::size_t>(
+        kEngineClientGetViewAnglesVtableIndex);
+    const auto vtableAddress = reinterpret_cast<std::uintptr_t>(vtable);
+    if (slot > ((std::numeric_limits<std::uintptr_t>::max)() -
+                vtableAddress) / sizeof(void *)) {
+        return false;
+    }
+
+    void *method = nullptr;
+    const auto methodAddress = vtableAddress + slot * sizeof(void *);
+    if (!mem::ReadValue(reinterpret_cast<const void *>(methodAddress),
+                        method) ||
+        method == nullptr || !mem::IsExecutable(method)) {
+        return false;
+    }
+
+    const auto getViewAngles = reinterpret_cast<EngineClientGetViewAnglesFn>(
+        method);
+    getViewAngles(engineClient, angles);
+    return true;
 }
 
 std::uintptr_t GetClientStateAddress() {

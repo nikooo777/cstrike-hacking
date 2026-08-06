@@ -38,10 +38,10 @@ void Aimbot(CUserCmd *userCmd) {
     }
 
     auto playerToAim = game::GetPlayer(closestPlayerIndex);
-    auto boneMatrixBase = playerToAim->m_dwBoneMatrix();
-    auto headMatrix = boneMatrixBase + 0x30 * 14;
-    Vector3 headPos{*(float *)(headMatrix + 0xC), *(float *)(headMatrix + 0x1C),
-                    *(float *)(headMatrix + 0x2C)};
+    Vector3 headPos{};
+    if (!game::GetBonePosition(playerToAim, 14, headPos)) {
+        return;
+    }
     auto viewPos = game::EyePosition(localPlayer);
     userCmd->viewangles = viewPos.CalcAngle(headPos);
 }

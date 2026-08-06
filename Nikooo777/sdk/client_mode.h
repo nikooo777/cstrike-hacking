@@ -4,8 +4,8 @@
 
 class ClientMode {
 public:
-    char pad_0004[1084];
-
+    // This overlay only uses the vtable. Do not add a 32-bit object-layout
+    // padding block: the vptr is pointer-sized on both supported ABIs.
     virtual void Function0();
     virtual void Function1();
     virtual void Function2();

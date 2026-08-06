@@ -4,6 +4,8 @@ project(cstrike_hax LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+include(CTest)
+
 # The current game build is x64, but keeping the x86 profile makes the ABI
 # change easy to compare while following the earlier tutorial chapters.
 if (CMAKE_SIZEOF_VOID_P EQUAL 8)
@@ -39,12 +41,15 @@ set(NIKOOO777_SOURCES
     Nikooo777/game/entity_list.cpp
     Nikooo777/game/interfaces.cpp
     Nikooo777/game/player.cpp
+    Nikooo777/game/weapon_math.cpp
+    Nikooo777/game/weapon.cpp
 
     Nikooo777/features/aimbot.cpp
     Nikooo777/features/bhop.cpp
     Nikooo777/features/debug_info.cpp
     Nikooo777/features/menu.cpp
     Nikooo777/features/norecoil.cpp
+    Nikooo777/features/perfect_nospread.cpp
     Nikooo777/features/triggerbot.cpp
 
     Nikooo777/hooks/create_move.cpp
@@ -108,3 +113,15 @@ target_link_libraries(nikooo777 PRIVATE
     minhook
     ${DXSDK_DIR}/Lib/${NIKOOO777_ARCH}/d3d9.lib
 )
+
+if (BUILD_TESTING)
+    add_executable(weapon_math_tests
+        tests/weapon_math_tests.cpp
+        Nikooo777/game/weapon_math.cpp
+        Nikooo777/math/vector.cpp
+    )
+    target_include_directories(weapon_math_tests PRIVATE
+        ${CMAKE_SOURCE_DIR}/Nikooo777
+    )
+    add_test(NAME weapon_math COMMAND weapon_math_tests)
+endif()

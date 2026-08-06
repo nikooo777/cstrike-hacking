@@ -15,6 +15,11 @@ public:
     Vector3 CalcAngle(const Vector3 &other) const;
 
     Vector3 operator+(const Vector3 &other) const;
+    Vector3 operator-(const Vector3 &other) const;
+    Vector3 operator*(float scalar) const;
+
+    float Length() const;
+    Vector3 Normalized() const;
 
     void NormalizeAngles();
 
@@ -22,3 +27,10 @@ public:
 
     void Zero();
 };
+
+// Source-style basis from degrees (pitch, yaw, roll). Null outputs are skipped.
+void AngleVectors(const Vector3 &angles, Vector3 *forward, Vector3 *right,
+                  Vector3 *up);
+
+// Degrees (pitch, yaw, 0) from a direction vector.
+Vector3 VectorAngles(const Vector3 &forward);

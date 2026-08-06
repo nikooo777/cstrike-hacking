@@ -273,6 +273,9 @@ constexpr RequiredNetvar kRequiredNetvars[] = {
     {"DT_Local", "m_vecPunchAngle"},
     {"DT_Local", "m_vecPunchAngleVel"},
     {"DT_CSLocalPlayerExclusive", "m_iShotsFired"},
+    {"DT_BaseCombatCharacter", "m_hActiveWeapon"},
+    {"DT_WeaponCSBase", "m_weaponMode"},
+    {"DT_WeaponCSBase", "m_fAccuracyPenalty"},
 };
 
 } // namespace

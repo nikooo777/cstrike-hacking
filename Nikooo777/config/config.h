@@ -50,6 +50,10 @@ struct FeatureDefaults {
     bool triggerbot = true;
     bool norecoil = true;
     bool visualNoRecoil = true;
+    // Perfect nospread mutates cmd angles; keep off until diagnostics pass.
+    bool perfectNoSpread = false;
+    // Make the CreateMove caller leave the camera alone after cmd mutation.
+    bool silentAngles = true;
     bool menuOpen = false;
 };
 

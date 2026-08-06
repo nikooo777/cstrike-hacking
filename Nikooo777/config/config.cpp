@@ -373,6 +373,10 @@ bool Load(HMODULE selfModule, std::string &error) {
                           candidate.features.norecoil, error) ||
         !ReadOptionalBool(ini, "features", "visual_norecoil", true,
                           candidate.features.visualNoRecoil, error) ||
+        !ReadOptionalBool(ini, "features", "perfect_nospread", false,
+                          candidate.features.perfectNoSpread, error) ||
+        !ReadOptionalBool(ini, "features", "silent_angles", true,
+                          candidate.features.silentAngles, error) ||
         !ReadOptionalBool(ini, "features", "menu_open", false,
                           candidate.features.menuOpen, error) ||
         !ReadSignature(ini, "signature.clientstate", "ClientState",

@@ -51,6 +51,76 @@ Vector3 Vector3::operator+(const Vector3 &other) const {
     return {x + other.x, y + other.y, z + other.z};
 }
 
+Vector3 Vector3::operator-(const Vector3 &other) const {
+    return {x - other.x, y - other.y, z - other.z};
+}
+
+Vector3 Vector3::operator*(float scalar) const {
+    return {x * scalar, y * scalar, z * scalar};
+}
+
+float Vector3::Length() const {
+    return sqrtf(x * x + y * y + z * z);
+}
+
+Vector3 Vector3::Normalized() const {
+    const float length = Length();
+    if (length <= 1e-6f) {
+        return {0.0f, 0.0f, 0.0f};
+    }
+    const float inv = 1.0f / length;
+    return {x * inv, y * inv, z * inv};
+}
+
 void Vector3::Zero() {
     x = y = z = 0.0f;
+}
+
+void AngleVectors(const Vector3 &angles, Vector3 *forward, Vector3 *right,
+                  Vector3 *up) {
+    const float pitch = angles.x * (PI / 180.0f);
+    const float yaw = angles.y * (PI / 180.0f);
+    const float roll = angles.z * (PI / 180.0f);
+
+    const float sp = sinf(pitch);
+    const float cp = cosf(pitch);
+    const float sy = sinf(yaw);
+    const float cy = cosf(yaw);
+    const float sr = sinf(roll);
+    const float cr = cosf(roll);
+
+    if (forward != nullptr) {
+        *forward = {cp * cy, cp * sy, -sp};
+    }
+    if (right != nullptr) {
+        *right = {
+            -1.0f * sr * sp * cy + -1.0f * cr * -sy,
+            -1.0f * sr * sp * sy + -1.0f * cr * cy,
+            -1.0f * sr * cp,
+        };
+    }
+    if (up != nullptr) {
+        *up = {
+            cr * sp * cy + -sr * -sy,
+            cr * sp * sy + -sr * cy,
+            cr * cp,
+        };
+    }
+}
+
+Vector3 VectorAngles(const Vector3 &forward) {
+    Vector3 angles{0.0f, 0.0f, 0.0f};
+    if (forward.x == 0.0f && forward.y == 0.0f) {
+        angles.x = forward.z > 0.0f ? -90.0f : 90.0f;
+        angles.y = 0.0f;
+        return angles;
+    }
+
+    angles.x = -atan2f(forward.z, sqrtf(forward.x * forward.x +
+                                        forward.y * forward.y)) *
+               (180.0f / PI);
+    angles.y = atan2f(forward.y, forward.x) * (180.0f / PI);
+    angles.z = 0.0f;
+    angles.NormalizeAngles();
+    return angles;
 }

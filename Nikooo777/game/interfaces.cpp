@@ -302,9 +302,11 @@ EngineClient *GetEngineClient() {
     }
 
     if (config::Get().settings.validatePointers &&
-        !HasUsableVtableSlot(
-            g_engineClient, kEngineClientGetViewAnglesVtableIndex)) {
-        std::cout << "EngineClient GetViewAngles vtable slot is not usable"
+        (!HasUsableVtableSlot(
+             g_engineClient, kEngineClientGetViewAnglesVtableIndex) ||
+         !HasUsableVtableSlot(
+             g_engineClient, kEngineClientSetViewAnglesVtableIndex))) {
+        std::cout << "EngineClient Get/SetViewAngles vtable slots are not usable"
                   << std::endl;
         g_engineClient = nullptr;
         return nullptr;
@@ -325,7 +327,9 @@ EngineClient *GetEngineClient() {
     return g_engineClient;
 }
 
-bool GetViewAngles(Vector3 &angles) {
+namespace {
+
+bool CallEngineViewAngles(Vector3 &angles, int slotIndex) {
     auto *engineClient = GetEngineClient();
     if (engineClient == nullptr) {
         return false;
@@ -336,8 +340,7 @@ bool GetViewAngles(Vector3 &angles) {
         return false;
     }
 
-    const auto slot = static_cast<std::size_t>(
-        kEngineClientGetViewAnglesVtableIndex);
+    const auto slot = static_cast<std::size_t>(slotIndex);
     const auto vtableAddress = reinterpret_cast<std::uintptr_t>(vtable);
     if (slot > ((std::numeric_limits<std::uintptr_t>::max)() -
                 vtableAddress) / sizeof(void *)) {
@@ -352,10 +355,35 @@ bool GetViewAngles(Vector3 &angles) {
         return false;
     }
 
-    const auto getViewAngles = reinterpret_cast<EngineClientGetViewAnglesFn>(
-        method);
-    getViewAngles(engineClient, angles);
-    return true;
+    if (slotIndex == kEngineClientGetViewAnglesVtableIndex) {
+        __try {
+            reinterpret_cast<EngineClientGetViewAnglesFn>(method)(engineClient,
+                                                                  angles);
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            return false;
+        }
+        return true;
+    }
+    if (slotIndex == kEngineClientSetViewAnglesVtableIndex) {
+        __try {
+            reinterpret_cast<EngineClientSetViewAnglesFn>(method)(engineClient,
+                                                                  angles);
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            return false;
+        }
+        return true;
+    }
+    return false;
+}
+
+} // namespace
+
+bool GetViewAngles(Vector3 &angles) {
+    return CallEngineViewAngles(angles, kEngineClientGetViewAnglesVtableIndex);
+}
+
+bool SetViewAngles(Vector3 &angles) {
+    return CallEngineViewAngles(angles, kEngineClientSetViewAnglesVtableIndex);
 }
 
 std::uintptr_t GetClientStateAddress() {

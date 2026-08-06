@@ -17,6 +17,7 @@ BaseClient *GetBaseClient();
 IClientEntityList *GetClientEntityList();
 EngineClient *GetEngineClient();
 bool GetViewAngles(Vector3 &angles);
+bool SetViewAngles(Vector3 &angles);
 std::uintptr_t GetClientStateAddress();
 
 } // namespace game

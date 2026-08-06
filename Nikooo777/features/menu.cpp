@@ -14,6 +14,8 @@ void Menu() {
     ImGui::Checkbox("Triggerbot", &cfg.triggerbot);
     ImGui::Checkbox("No recoil (cmd)", &cfg.norecoil);
     ImGui::Checkbox("Visual no recoil (FSN)", &cfg.visualNoRecoil);
+    ImGui::Checkbox("Perfect nospread (cmd, default off)", &cfg.perfectNoSpread);
+    ImGui::Checkbox("Silent angles (restore camera)", &cfg.silentAngles);
     ImGui::Separator();
     ImGui::Text("INSERT: toggle menu");
     ImGui::Text("F1: console debug dump");

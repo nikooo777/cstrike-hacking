@@ -189,6 +189,24 @@ This selects `Lib/x64/d3d9.lib`, builds the x64 MinHook sources, and copies
 `config/signatures-x64.ini` to `build-msvc-x64/signatures.ini`. Do not reuse an
 x86 build directory when changing pointer size.
 
+### Offline deterministic tests
+
+The seed derivation, cone replay, command-layout checks, and inverse-cone math
+are also built as a small architecture-specific test executable. They do not
+load the game, resolve signatures, or call game-owned interfaces:
+
+```bat
+cmake --build build-msvc-x64 --target weapon_math_tests
+ctest --test-dir build-msvc-x64 --output-on-failure
+```
+
+Run the same two commands with `build-msvc-x86` after configuring the x86
+profile. With a multi-configuration Visual Studio generator, append
+`--config Release` to the build and `-C Release` to `ctest`. These tests catch
+deterministic math and ABI regressions; they do not
+replace a permitted in-game smoke test for signatures, vtables, timing, or
+object lifetimes.
+
 ## Permitted offline smoke test
 
 This repository does not provide a standalone executable, injector, or anti-cheat workaround. For a local test environment you control:
@@ -225,6 +243,7 @@ The debug dump reports module bases, runtime interface/client-only offsets, reso
 - [002 - Netvars and entity offsets](aidocs/002_netvars-and-entity-offsets.md)
 - [003 - Global addresses, interfaces, and input commands](aidocs/003_global-addresses-and-inputs.md)
 - [004 - x64 migration and ABI](aidocs/004_x64-migration-and-abi.md)
+- [005 - No-spread and weapon accuracy](aidocs/005_no-spread-and-weapon-accuracy.md)
 
 The architecture-selected signature profile is the source of truth for the two
 runtime signatures and the named client/engine interfaces. It intentionally
@@ -254,7 +273,7 @@ provenance fields whenever a new build is reverse-engineered.
 - The aimbot is intentionally basic: closest valid target, bone 14, and an immediate angle change. It does not implement visibility checks, smoothing, weapon handling, or movement correction.
 - The triggerbot is deliberately narrow: it uses the client-only crosshair target ID and requires the local player to be on the ground.
 - Rendering support is D3D9-specific and depends on finding the game's visible top-level window.
-- There is no automated test suite; validation is a successful architecture-matched build followed by a permitted local smoke test.
+- The deterministic seed/spread math has an offline CTest target; signatures, interfaces, timing, and object lifetimes still require an architecture-matched build followed by a permitted local smoke test.
 - Nothing here is intended to bypass VAC, FaceIT, or any other anti-cheat system.
 
 ## Videos / notes while reversing

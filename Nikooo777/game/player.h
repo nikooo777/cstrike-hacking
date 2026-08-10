@@ -22,7 +22,10 @@ struct DormancyInfo {
 bool IsAlive(const CBasePlayer *player);
 bool IsEnemy(const CCSPlayer *local, const CCSPlayer *other);
 bool IsValidTarget(const CCSPlayer *local, const CCSPlayer *other);
+bool IsVisible(const CCSPlayer *local, const CCSPlayer *other,
+               const Vector3 &targetPosition);
 bool GetDormancyInfo(const CBasePlayer *player, DormancyInfo &info);
+bool GetLocalEyeAngles(const CBasePlayer *player, Vector3 &angles);
 Vector3 EyePosition(const CBasePlayer *player);
 bool GetBoneCacheInfo(const CBasePlayer *player, BoneCacheInfo &cache);
 bool GetBonePosition(const CBasePlayer *player, int bone, Vector3 &position);

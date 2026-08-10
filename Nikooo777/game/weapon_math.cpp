@@ -1,6 +1,7 @@
 #include "game/weapon_math.h"
 
 #include <cmath>
+#include <limits>
 
 #include "sdk/user_cmd.h"
 
@@ -8,10 +9,10 @@ namespace game {
 
 namespace {
 
-constexpr float kMaxPlausibleCone = 5.0f;
+constexpr float kMaxPlausibleCone = 10.0f;
 constexpr int kCompensationIterations = 4;
 constexpr float kPi = 3.14159265358979323846f;
-constexpr float kTwoPi = 6.2831854820251465f;
+constexpr float kTwoPi = 6.28318530717958647692f;
 
 constexpr std::uint32_t RotateLeft(std::uint32_t value, unsigned amount) {
     return (value << amount) | (value >> (32U - amount));
@@ -179,6 +180,98 @@ std::uint32_t CommandRandomSeed(int commandNumber) {
            0x7fffffffu;
 }
 
+bool PredictNextAccuracyPenalty(int shotsFired, float divisor,
+                                bool quadratic, float offset, float cap,
+                                float currentPenalty, float &out) {
+    out = 0.0f;
+    if (shotsFired < 0 || !std::isfinite(divisor) ||
+        !std::isfinite(offset) || !std::isfinite(cap) ||
+        !std::isfinite(currentPenalty) || offset < 0.0f || cap < 0.0f ||
+        currentPenalty < 0.0f || (divisor != -1.0f && divisor <= 0.0f)) {
+        return false;
+    }
+
+    if (divisor == -1.0f) {
+        out = currentPenalty;
+        return true;
+    }
+
+    const auto nextShots = static_cast<long long>(shotsFired) + 1;
+    if (nextShots > 0 &&
+        nextShots > (std::numeric_limits<long long>::max)() / nextShots) {
+        return false;
+    }
+    long long power = nextShots * nextShots;
+    if (!quadratic) {
+        if (nextShots > 0 &&
+            power > (std::numeric_limits<long long>::max)() / nextShots) {
+            return false;
+        }
+        power *= nextShots;
+    }
+    const float candidate = static_cast<float>(power) / divisor + offset;
+    if (!std::isfinite(candidate)) {
+        return false;
+    }
+
+    out = candidate < cap ? candidate : cap;
+    return std::isfinite(out) && out >= 0.0f;
+}
+
+bool PredictAccuracyPenaltyDecay(float currentPenalty, float baseline,
+                                 float recoveryTime, float intervalPerTick,
+                                 float decayConstant, float &out) {
+    out = 0.0f;
+    if (!std::isfinite(currentPenalty) || !std::isfinite(baseline) ||
+        !std::isfinite(recoveryTime) || !std::isfinite(intervalPerTick) ||
+        !std::isfinite(decayConstant) || currentPenalty < 0.0f ||
+        baseline < 0.0f || recoveryTime <= 0.0f ||
+        intervalPerTick <= 0.0f || intervalPerTick > 1.0f ||
+        decayConstant >= 0.0f) {
+        return false;
+    }
+
+    if (currentPenalty < baseline) {
+        out = baseline;
+        return true;
+    }
+
+    const float factor =
+        expf((decayConstant / recoveryTime) * intervalPerTick);
+    out = factor * (currentPenalty - baseline) + baseline;
+    return std::isfinite(out) && out >= 0.0f;
+}
+
+bool PredictCssPunchDecay(const Vector3 &currentPunch,
+                          float intervalPerTick, Vector3 &out) {
+    out = {};
+    if (!std::isfinite(currentPunch.x) ||
+        !std::isfinite(currentPunch.y) ||
+        !std::isfinite(currentPunch.z) ||
+        !std::isfinite(intervalPerTick) || intervalPerTick <= 0.0f ||
+        intervalPerTick > 1.0f) {
+        return false;
+    }
+
+    const float lengthSquared = currentPunch.x * currentPunch.x +
+                                currentPunch.y * currentPunch.y +
+                                currentPunch.z * currentPunch.z + 1e-10f;
+    const float length = sqrtf(lengthSquared);
+    if (!std::isfinite(length) || length <= 0.0f) {
+        return false;
+    }
+
+    float nextLength =
+        length - (length * 0.5f + 10.0f) * intervalPerTick;
+    if (nextLength < 0.0f) {
+        nextLength = 0.0f;
+    }
+    const float scale = nextLength / length;
+    out = currentPunch * scale;
+    return std::isfinite(out.x) && std::isfinite(out.y) &&
+           std::isfinite(out.z);
+}
+
 bool ResolveCommandRandomSeed(const CUserCmd *userCmd,
                               std::uint32_t &seedOut,
                               bool &fromStoredSeedOut) {
@@ -212,25 +305,28 @@ bool PredictConeOffsets(int randomSeed, float inaccuracy, float spread,
     }
 
     LocalUniformStream stream;
+    // The current CS FX/server fire path calls RandomSeed(seed8 + 1), then
+    // samples one polar offset at the inaccuracy radius and one at the
+    // per-pellet spread radius. The helper returns (sin(theta), cos(theta));
+    // the fire call consumes those lanes as (right, up) = (cos, sin).
     stream.SetSeed(static_cast<int>(Seed8(randomSeed)) + 1);
 
-    const float theta0 = stream.RandomFloat(0.0f, kTwoPi);
-    const float radius0 = stream.RandomFloat(0.0f, inaccuracy);
-    const float theta = stream.RandomFloat(0.0f, kTwoPi);
-    const float radius = stream.RandomFloat(0.0f, spread);
+    const auto samplePolar = [&stream](float radius, float &sx, float &sy) {
+        const float theta = stream.RandomFloat(0.0f, kTwoPi);
+        const float magnitude = stream.RandomFloat(0.0f, radius);
+        sx = cosf(theta) * magnitude;
+        sy = sinf(theta) * magnitude;
+    };
 
-    if (!std::isfinite(theta0) || !std::isfinite(radius0) ||
-        !std::isfinite(theta) || !std::isfinite(radius)) {
-        return false;
-    }
+    float inaccuracyX = 0.0f;
+    float inaccuracyY = 0.0f;
+    float spreadX = 0.0f;
+    float spreadY = 0.0f;
+    samplePolar(inaccuracy, inaccuracyX, inaccuracyY);
+    samplePolar(spread, spreadX, spreadY);
 
-    const float sx0 = cosf(theta0) * radius0;
-    const float sy0 = sinf(theta0) * radius0;
-    const float sxi = cosf(theta) * radius;
-    const float syi = sinf(theta) * radius;
-
-    out.sx = sx0 + sxi;
-    out.sy = sy0 + syi;
+    out.sx = inaccuracyX + spreadX;
+    out.sy = inaccuracyY + spreadY;
     out.ok = std::isfinite(out.sx) && std::isfinite(out.sy);
     return out.ok;
 }
@@ -309,6 +405,73 @@ bool CompensateAngles(const Vector3 &intended, float sx, float sy,
     result.ok = std::isfinite(result.angles.x) &&
                 std::isfinite(result.angles.y) &&
                 std::isfinite(result.forwardErrorDeg);
+    return result.ok;
+}
+
+namespace {
+
+bool IsFiniteAngles(const Vector3 &angles) {
+    return std::isfinite(angles.x) && std::isfinite(angles.y) &&
+           std::isfinite(angles.z);
+}
+
+Vector3 NormalizeCommandAngles(Vector3 angles) {
+    angles.NormalizeAngles();
+    angles.ClampAngles();
+    return angles;
+}
+
+} // namespace
+
+bool ComposeShotAngles(const ShotAngleRequest &request,
+                       ShotAngleResult &result) {
+    result = {};
+    if (!IsFiniteAngles(request.desiredAngles)) {
+        return false;
+    }
+
+    const bool punchUsable =
+        request.punchReadable && IsFiniteAngles(request.punchAngles);
+    const Vector3 punchTwice = punchUsable ? request.punchAngles * 2.0f
+                                           : Vector3{};
+
+    result.commandAngles = request.desiredAngles;
+    result.recoilCommandAngles = request.desiredAngles;
+    result.fireBaseAngles = NormalizeCommandAngles(
+        request.desiredAngles + (punchUsable ? punchTwice : Vector3{}));
+    result.spreadAngles = result.fireBaseAngles;
+
+    if (request.noRecoil && punchUsable) {
+        result.noRecoilApplied = true;
+        result.recoilCommandAngles = NormalizeCommandAngles(
+            request.desiredAngles - punchTwice);
+        result.fireBaseAngles = request.desiredAngles;
+        result.spreadAngles = result.fireBaseAngles;
+    }
+
+    result.commandAngles = result.recoilCommandAngles;
+
+    // Spread compensation is only valid when the feature code supplied a
+    // live punch basis and a seed-derived cone. If it fails, retain the recoil
+    // stage instead of partially applying an angle transform.
+    if (request.noSpread && request.spreadAvailable && punchUsable) {
+        CompensationResult compensated{};
+        if (CompensateAngles(result.fireBaseAngles, request.spreadX,
+                             request.spreadY, compensated) &&
+            compensated.ok && compensated.forwardErrorDeg <= 1.0f) {
+            result.spreadAngles = compensated.angles;
+            result.commandAngles = NormalizeCommandAngles(
+                compensated.angles - punchTwice);
+            result.spreadResidualDeg = compensated.forwardErrorDeg;
+            result.spreadIterations = compensated.iterations;
+            result.noSpreadApplied = true;
+        }
+    }
+
+    result.ok = IsFiniteAngles(result.commandAngles) &&
+                IsFiniteAngles(result.recoilCommandAngles) &&
+                IsFiniteAngles(result.fireBaseAngles) &&
+                IsFiniteAngles(result.spreadAngles);
     return result.ok;
 }
 

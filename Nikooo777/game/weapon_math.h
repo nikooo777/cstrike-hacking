@@ -24,10 +24,47 @@ struct CompensationResult {
     bool ok = false;
 };
 
+// Inputs for the shared command-angle pipeline. The game applies the current
+// punch as +2*punch to the fire angles after CreateMove, so spread must be
+// inverted around that post-punch basis rather than around the raw command.
+struct ShotAngleRequest {
+    Vector3 desiredAngles{};
+    Vector3 punchAngles{};
+    bool punchReadable = false;
+    bool noRecoil = false;
+    bool noSpread = false;
+    bool spreadAvailable = false;
+    float spreadX = 0.0f;
+    float spreadY = 0.0f;
+};
+
+struct ShotAngleResult {
+    Vector3 commandAngles{};
+    Vector3 recoilCommandAngles{};
+    Vector3 fireBaseAngles{};
+    Vector3 spreadAngles{};
+    float spreadResidualDeg = 0.0f;
+    int spreadIterations = 0;
+    bool noRecoilApplied = false;
+    bool noSpreadApplied = false;
+    bool ok = false;
+};
+
 std::uint8_t Seed8(int randomSeed);
 
 // Source's command seed: MD5_PseudoRandom(command_number) & 0x7fffffff.
 std::uint32_t CommandRandomSeed(int commandNumber);
+
+bool PredictNextAccuracyPenalty(int shotsFired, float divisor,
+                                bool quadratic, float offset, float cap,
+                                float currentPenalty, float &out);
+
+bool PredictAccuracyPenaltyDecay(float currentPenalty, float baseline,
+                                 float recoveryTime, float intervalPerTick,
+                                 float decayConstant, float &out);
+
+bool PredictCssPunchDecay(const Vector3 &currentPunch,
+                          float intervalPerTick, Vector3 &out);
 
 // Prefer a seed already published on the command; otherwise derive the seed
 // for a positive command number. Returns false for the zero-sequence temporary
@@ -36,9 +73,9 @@ bool ResolveCommandRandomSeed(const CUserCmd *userCmd,
                               std::uint32_t &seedOut,
                               bool &fromStoredSeedOut);
 
-// Local UniformRandomStream replay — does not call vstdlib globals, so
-// diagnostics stay non-mutating. Matches the Source ran1-style stream used by
-// RandomSeed/RandomFloat for this game family.
+// Replay this build's CS FX_FireBullets cone without touching vstdlib's global
+// stream. The two inputs are separate radii: GetInaccuracy() is sampled once
+// per shot and GetSpread() is sampled once per pellet.
 bool PredictConeOffsets(int randomSeed, float inaccuracy, float spread,
                         ConeOffsets &out);
 
@@ -46,6 +83,13 @@ bool PredictConeOffsets(int randomSeed, float inaccuracy, float spread,
 // iterations using the command basis so forward-sim error shrinks.
 bool CompensateAngles(const Vector3 &intended, float sx, float sy,
                       CompensationResult &result);
+
+// Compose aim, recoil, and spread in the same order as the game. This is pure
+// math: feature code supplies the live punch/seed-derived cone state and the
+// config-selected booleans, while this function keeps the toggle interactions
+// testable without loading the game.
+bool ComposeShotAngles(const ShotAngleRequest &request,
+                       ShotAngleResult &result);
 
 // Forward-simulate post-spread direction from command angles + (sx, sy).
 bool ForwardSpreadDirection(const Vector3 &cmdAngles, float sx, float sy,

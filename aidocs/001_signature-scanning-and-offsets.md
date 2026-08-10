@@ -377,6 +377,7 @@ against the client.dll sample in the live Ghidra project. The address and
 uniqueness result are specific to that sample; they are not a claim of
 cross-version compatibility. Entity fields that are part of the client receive
 tables are now handled in [002 - Netvars and entity offsets](002_netvars-and-entity-offsets.md).
-Client-only state and bone-matrix layout remain build-specific until they have
-a different source of truth. The entity-list and force-input cleanup is
+Client-only state and bone-matrix layout remain build-specific. Chapter 004
+records the current x64 function, interface, and pointer-basis evidence for
+the fields now used by the project. The entity-list and force-input cleanup is
 documented in [003 - Global addresses, interfaces, and input commands](003_global-addresses-and-inputs.md).

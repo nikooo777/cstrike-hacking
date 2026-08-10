@@ -216,15 +216,37 @@ Slots currently verified for the sample x64 build, counting from zero:
 | `VClient017` | `IN_ActivateMouse` / `IN_DeactivateMouse` | 14 / 15 |
 | `VClient017` | `FrameStageNotify` | 35 |
 | `VClientEntityList003` | `GetClientEntity` | 3 |
+| `ClientMode` | `OverrideView` | 16 |
 | `ClientMode` | `CreateMove` | 21 |
 | `VEngineClient014` | `GetViewAngles` | 19 |
+| `EngineTraceClient003` | `TraceRay` | 4 |
 | `IClientUnknown` | `GetClientNetworkable` | 4 |
 | `IClientNetworkable` | `IsDormant` | 8 |
+| `VGUI_Surface030` | `SetCursor` | 51 |
+| `VGUI_Surface030` | `UnlockCursor` / `LockCursor` | 61 / 62 |
+| `VGUI_Surface030` | `CalculateMouseVisible` / `IsCursorLocked` | 93 / 104 |
 | `IDirect3DDevice9` | `EndScene` | 42 |
 
 These are evidence for the current sample, not universal constants. The x64
 engine's view-angle path is obtained through `VEngineClient014`; do not reuse
 the old x86 `ClientState + 0x4B84` overlay on x64.
+
+Source cursor ownership is decided before rendering. In the matching x64
+engine, `CEngineVGui::Simulate` at `engine.dll+0x227620` calls
+`VGUI_Surface030::CalculateMouseVisible`, checks `IsCursorLocked`, then calls
+`VClient017::IN_ActivateMouse` or `IN_DeactivateMouse`. An ImGui window is not
+a VGUI popup, so changing visibility or unlocking once in `EndScene` loses to
+the next engine simulation. The current menu hook intercepts verified surface
+slot 62: it calls the original while closed and substitutes slot 61 plus the
+arrow cursor while open. Re-verify the surface object, slots, and engine caller
+together after a VGUI or engine update.
+
+The current visibility path uses `EngineTraceClient003::TraceRay` slot 4 with
+Source's `MASK_VISIBLE` (`0x6081`). The local ABI declaration preserves the
+`Ray_t` layout and `CGameTrace::fraction` at `+0x2C`, and its filter skips the
+local/candidate entities. Re-check the interface, slot, filter entity basis,
+and trace layouts together after an engine update; a readable interface alone
+does not prove that a visibility result is meaningful.
 
 ## Netvars, private fields, and pointer basis
 
@@ -344,19 +366,26 @@ Use this sequence for no-spread, ESP, or any new private field:
 
 Read [aidocs/005](aidocs/005_no-spread-and-weapon-accuracy.md) before writing
 feature code. The tutorial target is **perfect nospread** (seed-based inverse
-cone on `CUserCmd`) plus **silent visual restore** (`SetViewAngles` back to
-the intended look so compensation does not shake the camera), composed with
-the existing **visual no-recoil** FSN punch hide.
+cone on `CUserCmd`) plus **silent visual suppression** (return `false` so the
+CreateMove caller does not copy compensated angles into the camera), composed
+with the **visual no-recoil** camera correction in ClientMode slot 16.
 
 ```text
 command_number -> MD5_PseudoRandom -> CUserCmd.random_seed -> prediction seed global
+  -> movement applies one CSS punch-decay tick
+  -> weapon slot 384 applies one pre-fire m_fAccuracyPenalty decay tick
   -> weapon fire uses seed8 = random_seed & 0xFF
-  -> GetInaccuracy / GetSpread
-  -> RandomSeed(seed8+1); RandomFloat cones
-  -> dir = forward + right*sx + up*sy
+  -> GetInaccuracy / GetSpread at fire-time state
+  -> CS fire path: RandomSeed(seed8+1); polar inaccuracy + spread samples
+  -> keep GetInaccuracy and GetSpread as separate radii
+  -> helper pair is (low=sin, high=cos); fire consumes (right,up)=(high,low)
+  -> fire angles = cmd angles + 2*punch
+  -> dir = forward + right*(x*spreadX) + up*(y*spreadY)
 
-CreateMove: intended -> aim/recoil/perfect nospread on cmd -> return false if silent
-FrameStageNotify: zero punch for render, restore punch after
+CreateMove: input -> desired aim -> config-aware fire-space recoil/spread
+  -> one final cmd angle -> return false whenever command no-recoil mutates
+     the angle, or when silent_angles hides another mutation
+OverrideView: call original -> subtract one punch from CViewSetup::angles
 ```
 
 The x64 input caller has two relevant paths. `FUN_180152290` builds the real
@@ -364,8 +393,9 @@ ring-buffer command, writes `command_number` at `cmd + 0x08`, calls
 `ClientMode::CreateMove`, and writes `random_seed` at `cmd + 0x38` afterward.
 `FUN_1801527B0` calls the same hook with a temporary extra-mouse-sample command
 whose sequence remains zero. Treat `command_number == 0` as an unavailable
-seed, not as permission to use `MD5_PseudoRandom(0)`; otherwise every extra
-sample reuses one apparently valid cone and can hide a seed/order bug. The
+seed, not as permission to use `MD5_PseudoRandom(0)`; the hook skips all
+feature mutation on that temporary command and defers an F1 dump to the next
+real command. Otherwise every extra sample can hide a seed/order bug. The
 runtime diagnostic should show positive, changing command numbers during a
 magazine and identify zero-sequence samples explicitly.
 
@@ -374,17 +404,70 @@ Do not start by searching for an old “no spread offset”. Verified anchors
 
 - x64: penalty `+0xCB0`, mode `+0xCAC`, active weapon `+0x11A0`, vtable
   `GetInaccuracy`/`GetSpread` **slots 382/383** (bytes `+0xBF0`/`+0xBF8`),
-  fire uses `seed & 0xFF`, cone `sx=cos·r` / `sy=sin·r`, multi-pellet
-  policy **pellet0**
+  `UpdateAccuracyPenalty` slot 384 (`+0xC00`, `client.dll+0x2367D0`),
+  weapon id slot 371 (`+0xB98`), and next-penalty weapon-info fields
+  `+0x8CC/+0x8D0/+0x8D4/+0x8D8`;
+  pre-fire decay uses weapon-info baselines `+0x8E4/+0x8EC/+0x904`,
+  recovery times `+0x91C/+0x920`, and `CGlobalVarsBase+0x1C`;
+  the accuracy-info lookup helper at `client.dll+0x4D700` reads the ushort at
+  `weapon+0xC62`; do not substitute virtual weapon-id slot 371, which is the
+  separate id passed to the fire call;
+  one validated capture reported fire id 27, info index 46, predicted/actual
+  inaccuracy `0.0282658`, matching fire angles, and matching cone offsets;
+  branch-2 `GetInaccuracy` also adds a post-movement speed term from
+  absolute velocity `player+0x1A8/+0x1AC`, remapped across 34%-95% of weapon
+  speed and scaled by weapon-info `+0x914+mode*4`;
+  paired stationary/moving captures showed the movement term matching at
+  fire time while the same penalty-only error remained in both cases;
+  the optional `UpdateAccuracyPenalty` entry detour records exact pre/post
+  `+0xCB0` and `CGlobalVarsBase+0x1C` values before changing the formula;
+  the live CSS punch-decay override is movement vtable slot 15 at
+  `client.dll+0x1F5AE0`, consuming `player+0x127C` and the same tick interval;
+  current CS fire uses `seed8+1` and separate polar radii;
+  client `+0x1FFA30` and server `+0x3252E0` are the current CS fire
+  references; generic `+0x4FF30` / `+0x137890` are a different path;
+  multi-pellet policy **pellet0**
 - x86: same slots 382/383 (bytes `+0x5F8`/`+0x5FC`); field offsets differ
 - engine: `SetViewAngles` slot 20 for diagnostics; silent mode returns `false`
   on any cmd angle mutation so the CreateMove caller leaves the camera alone
 
-Start with F1 after mutation: radii, seed8, local-stream `(sx,sy)`, residual
-degrees, cmd-vs-engine angle delta. Keep `perfect_nospread=false` until
+Start with F1 after mutation: raw and predicted fire-time radii, pre-fire
+penalty baseline/recovery/tick interval, current/predicted/actual punch,
+weapon id, shots fired, next penalty, seed8, local-stream `(sx,sy)`, residual
+degrees, cmd-vs-engine angle delta, and `cmd_fire` basis. The one-shot
+`FX_FireBullets` capture must show near-zero predicted radius delta and must
+reconstruct the actual fire angle from fire source plus `2*actual punch`.
+Do not use a fixed wall cluster to judge perfect nospread while command
+no-recoil is disabled: natural punch moves the fire angle. Enable both stages
+for that observation, or compare every impact to its recoil-adjusted angle.
+Keep `perfect_nospread=false` until
 residuals look plausible. Compensation is first-order+iterative, not claimed
 exact-perfect. A local change that looks correct can still disagree with the
 server; document observations only.
+
+The command writers are intentionally composed, not called as independent
+angle mutations. `game::ComposeShotAngles` changes its result with the
+configuration: no-recoil off preserves the natural `+2*punch` fire basis,
+no-spread compensates around that basis, no-recoil on removes punch through
+`command=desired-current_2punch`, and enabling both does both in fire space.
+Ghidra confirms that `FUN_180054450` adds only `1*punch` to the render view,
+while the fire path uses `2*punch`; no non-silent command recurrence can match
+both. Whenever command no-recoil changes the cmd, return `false` so the caller
+does not copy the fire-compensated angle into the camera. `silent_angles`
+continues to control camera suppression for aim/no-spread mutations when
+command no-recoil is not applied. If live punch or weapon/seed data is
+unreadable, that stage reports unavailable and the pipeline keeps the last
+valid stage. The F1 dump prints `aim`, `recoil`, and `spread` stage status plus
+`desired`, `fire_base`, and final `cmd` angles.
+
+Do not hide punch by writing zero around `FRAME_RENDER_START`. Ghidra shows
+x64 `FrameStageNotify` at `client.dll+0xD59B0` dispatching stage 5 to
+`client.dll+0xD6D70`, which runs client entity, temporary entity, and particle
+simulation. The verified render-only path is ClientMode slot 16: x64
+`client.dll+0xE67C0`, x86 `client.dll+0xF6220`, with
+`CViewSetup::angles` at `+0x4C`. The hook calls the original first, subtracts
+one current punch from the view angles, and leaves player punch state
+untouched.
 
 ## Preparing for a visual ESP tutorial
 
@@ -427,8 +510,9 @@ caller copies `cmd->viewangles` into the engine view only when the hook returns
 true. A `SetViewAngles` call made inside a `CreateMove` detour is consequently
 too early to be a reliable silent-camera restore; the caller overwrites it
 before rendering, and a later render-stage restore can race extra input
-samples. When the hook changed command angles and silent mode is enabled,
-return `false`; the command still continues through seed assignment,
+samples. When command no-recoil changed command angles, return `false`
+regardless of the silent-angle toggle. For other command mutations, do so when
+silent mode is enabled. The command still continues through seed assignment,
 verification, and networking while the caller leaves the render camera alone.
 This lifecycle detail explains the characteristic steadily spinning view while
 a per-tick inverse-cone feature is active. Also remember that the hook runs
@@ -447,7 +531,9 @@ sample is not a real firing command and must fail closed.
 | Immediate crash after a hook | Wrong vtable slot, function prototype, return type, or x86 calling convention. |
 | All x64 entities are dormant | A placeholder field/accessor is being used instead of `IClientNetworkable::IsDormant`. |
 | Bone cache is unavailable | Wrong entity-versus-renderable basis, invalid pointer/count, or the cache is not ready at that stage. |
+| All candidate targets are invisible | EngineTrace interface/slot, Ray_t/CGameTrace ABI, filter entity basis, or trace timing is wrong. |
 | View angles are zero | Wrong interface/slot or an obsolete ClientState overlay. |
+| Menu opens but the cursor is pinned | The engine relocked `VGUI_Surface030` and reactivated first-person input; verify surface slots 61/62/93/104 and the `LockCursor` hook. |
 | x86 works and x64 does not | Wrong profile was copied, a pointer was truncated, a metadata layout was reused, or an ABI branch is missing. |
 | ESP projection is mirrored/off-screen | Matrix order, coordinate convention, viewport scaling, or clip-space handling is wrong. |
 

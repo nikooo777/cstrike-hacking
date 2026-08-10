@@ -10,21 +10,27 @@
 #include "features/config.h"
 #include "game/interfaces.h"
 #include "hooks/d3d9_device.h"
+#include "memory/mem.h"
 #include "netvars/netvars.h"
 #include "sdk/client_mode.h"
+#include "sdk/vgui_surface.h"
 
 namespace hooks {
 
 CreateMoveFn originalCreateMove = nullptr;
-FrameStageNotifyFn originalFrameStageNotify = nullptr;
+OverrideViewFn originalOverrideView = nullptr;
+LockCursorFn originalLockCursor = nullptr;
 EndSceneFn originalEndScene = nullptr;
+#if !defined(_M_IX86) && !defined(__i386__)
+ClientFireBulletsFn originalClientFireBullets = nullptr;
+UpdateAccuracyPenaltyFn originalUpdateAccuracyPenalty = nullptr;
+#endif
 
 namespace {
 
 // IClientMode::CreateMove is vtable index 21 on this CS:S client build.
 constexpr int kCreateMoveVtableIndex = 21;
-// IBaseClientDLL::FrameStageNotify is vtable index 35.
-constexpr int kFrameStageNotifyVtableIndex = 35;
+constexpr int kOverrideViewVtableIndex = 16;
 // IDirect3DDevice9::EndScene is vtable index 42.
 constexpr int kEndSceneVtableIndex = 42;
 
@@ -39,10 +45,65 @@ void *GetCreateMoveAddress(ClientMode *clientMode) {
     return reinterpret_cast<void *>(GetVFunc<CreateMoveFn>(clientMode, kCreateMoveVtableIndex));
 }
 
-void *GetFrameStageNotifyAddress(BaseClient *baseClient) {
+void *GetOverrideViewAddress(ClientMode *clientMode) {
     return reinterpret_cast<void *>(
-        GetVFunc<FrameStageNotifyFn>(baseClient, kFrameStageNotifyVtableIndex));
+        GetVFunc<OverrideViewFn>(clientMode, kOverrideViewVtableIndex));
 }
+
+void *GetLockCursorAddress(void *surface) {
+    auto *vtable = mem::ReadPointer<void>(surface);
+    if (vtable == nullptr) {
+        return nullptr;
+    }
+
+    void *address = nullptr;
+    const auto slotAddress =
+        reinterpret_cast<std::uintptr_t>(vtable) +
+        sdk::vgui::kSurfaceLockCursor * sizeof(void *);
+    if (!mem::ReadValue(reinterpret_cast<const void *>(slotAddress), address) ||
+        address == nullptr || !mem::IsExecutable(address)) {
+        return nullptr;
+    }
+    return address;
+}
+
+#if !defined(_M_IX86) && !defined(__i386__)
+void *GetClientFireBulletsAddress() {
+    const auto &signature = config::Get().clientFireBullets;
+    std::size_t matchCount = 0;
+    auto *match = game::FindConfiguredSignature(signature, matchCount);
+    if (match == nullptr) {
+        return nullptr;
+    }
+
+    std::uintptr_t address = 0;
+    if (!mem::DecodeRipRelative32(
+            match, signature.operandOffset, signature.instructionOffset,
+            signature.instructionLength, address) ||
+        address == 0 ||
+        !mem::IsExecutable(reinterpret_cast<const void *>(address))) {
+        std::cout << "ClientFireBullets target is not executable" << std::endl;
+        return nullptr;
+    }
+
+    std::cout << "ClientFireBullets: 0x" << std::hex << address << std::dec
+              << std::endl;
+    return reinterpret_cast<void *>(address);
+}
+
+void *GetUpdateAccuracyPenaltyAddress() {
+    const auto &signature = config::Get().updateAccuracyPenalty;
+    std::size_t matchCount = 0;
+    auto *match = game::FindConfiguredSignature(signature, matchCount);
+    if (match == nullptr || signature.operand != "match" ||
+        !mem::IsExecutable(match)) {
+        std::cout << "UpdateAccuracyPenalty target is not executable"
+                  << std::endl;
+        return nullptr;
+    }
+    return match;
+}
+#endif
 
 } // namespace
 
@@ -81,16 +142,36 @@ DWORD __stdcall MainThread(void *pModule) {
         return 1;
     }
 
-    void *frameStageNotifyAddress = GetFrameStageNotifyAddress(baseClient);
-    std::cout << "FrameStageNotify: 0x" << std::hex << frameStageNotifyAddress << std::endl;
-
     auto *clientMode = game::GetClientMode();
     if (!clientMode) {
         std::cout << "ClientMode is null!" << std::endl;
         return 1;
     }
+    void *overrideViewAddress = GetOverrideViewAddress(clientMode);
+    std::cout << "OverrideView: 0x" << std::hex << overrideViewAddress
+              << std::endl;
     void *createMoveAddress = GetCreateMoveAddress(clientMode);
     std::cout << "CreateMove: 0x" << std::hex << createMoveAddress << std::endl;
+
+    void *vguiSurface = game::GetVguiSurface();
+    if (vguiSurface == nullptr) {
+        std::cout << "VGUI_Surface030 is null!" << std::endl;
+        return 1;
+    }
+    void *lockCursorAddress = GetLockCursorAddress(vguiSurface);
+    if (lockCursorAddress == nullptr) {
+        std::cout << "VGUI_Surface030 LockCursor is not executable"
+                  << std::endl;
+        return 1;
+    }
+    std::cout << "LockCursor: 0x" << std::hex << lockCursorAddress
+              << std::endl;
+
+#if !defined(_M_IX86) && !defined(__i386__)
+    void *clientFireBulletsAddress = GetClientFireBulletsAddress();
+    void *updateAccuracyPenaltyAddress =
+        GetUpdateAccuracyPenaltyAddress();
+#endif
 
     if (MH_Initialize() != MH_OK) {
         return 1;
@@ -109,20 +190,57 @@ DWORD __stdcall MainThread(void *pModule) {
                       reinterpret_cast<LPVOID *>(&originalCreateMove)) != MH_OK) {
         return 1;
     }
-    if (MH_CreateHook(frameStageNotifyAddress, (LPVOID)&hkFrameStageNotify,
-                      reinterpret_cast<LPVOID *>(&originalFrameStageNotify)) != MH_OK) {
+    if (MH_CreateHook(overrideViewAddress, (LPVOID)&hkOverrideView,
+                      reinterpret_cast<LPVOID *>(&originalOverrideView)) != MH_OK) {
+        return 1;
+    }
+    if (MH_CreateHook(lockCursorAddress, (LPVOID)&hkLockCursor,
+                      reinterpret_cast<LPVOID *>(&originalLockCursor)) != MH_OK) {
         return 1;
     }
     if (MH_CreateHook(endSceneAddress, (LPVOID)&hkEndScene,
                       reinterpret_cast<LPVOID *>(&originalEndScene)) != MH_OK) {
         return 1;
     }
+#if !defined(_M_IX86) && !defined(__i386__)
+    if (clientFireBulletsAddress != nullptr &&
+        MH_CreateHook(clientFireBulletsAddress, (LPVOID)&hkClientFireBullets,
+                      reinterpret_cast<LPVOID *>(
+                          &originalClientFireBullets)) != MH_OK) {
+        std::cout << "ClientFireBullets diagnostic hook failed" << std::endl;
+        clientFireBulletsAddress = nullptr;
+    }
+    if (updateAccuracyPenaltyAddress != nullptr &&
+        MH_CreateHook(updateAccuracyPenaltyAddress,
+                      (LPVOID)&hkUpdateAccuracyPenalty,
+                      reinterpret_cast<LPVOID *>(
+                          &originalUpdateAccuracyPenalty)) != MH_OK) {
+        std::cout << "UpdateAccuracyPenalty diagnostic hook failed"
+                  << std::endl;
+        updateAccuracyPenaltyAddress = nullptr;
+    }
+#endif
 
     if (MH_EnableHook(createMoveAddress) != MH_OK ||
-        MH_EnableHook(frameStageNotifyAddress) != MH_OK ||
+        MH_EnableHook(overrideViewAddress) != MH_OK ||
+        MH_EnableHook(lockCursorAddress) != MH_OK ||
         MH_EnableHook(endSceneAddress) != MH_OK) {
         return 1;
     }
+#if !defined(_M_IX86) && !defined(__i386__)
+    if (clientFireBulletsAddress != nullptr &&
+        MH_EnableHook(clientFireBulletsAddress) != MH_OK) {
+        std::cout << "ClientFireBullets diagnostic hook could not be enabled"
+                  << std::endl;
+        clientFireBulletsAddress = nullptr;
+    }
+    if (updateAccuracyPenaltyAddress != nullptr &&
+        MH_EnableHook(updateAccuracyPenaltyAddress) != MH_OK) {
+        std::cout << "UpdateAccuracyPenalty diagnostic hook could not be enabled"
+                  << std::endl;
+        updateAccuracyPenaltyAddress = nullptr;
+    }
+#endif
 
     features::PrintDebugInfo();
     std::cout << "Hooks enabled. INSERT=menu, F1=debug, END=unload" << std::endl;
@@ -134,8 +252,17 @@ DWORD __stdcall MainThread(void *pModule) {
     std::cout << "Exiting!" << std::endl;
 
     MH_DisableHook(createMoveAddress);
-    MH_DisableHook(frameStageNotifyAddress);
+    MH_DisableHook(overrideViewAddress);
+    MH_DisableHook(lockCursorAddress);
     MH_DisableHook(endSceneAddress);
+#if !defined(_M_IX86) && !defined(__i386__)
+    if (clientFireBulletsAddress != nullptr) {
+        MH_DisableHook(clientFireBulletsAddress);
+    }
+    if (updateAccuracyPenaltyAddress != nullptr) {
+        MH_DisableHook(updateAccuracyPenaltyAddress);
+    }
+#endif
     MH_Uninitialize();
 
     ShutdownEndScene();

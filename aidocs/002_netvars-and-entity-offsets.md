@@ -87,11 +87,11 @@ semantic name `m_vecVelocity` while matching either representation.
 | `CLocal::m_vecPunchAngleVel()` | `DT_Local -> m_vecPunchAngleVel` | Resolved relative to the `m_Local` subobject. |
 | `CCSPlayer::m_iShotsFired()` | `DT_CSLocalPlayerExclusive -> m_iShotsFired` | Game-specific replicated player state. |
 
-`CCSPlayer::m_iCrosshairID()` is intentionally not in this table. The current
-client sample has no `m_iCrosshairID` string in its receive metadata, while
-Ghidra shows client code accessing the field at `this + 0x14F0`. It therefore
-remains an explicitly labeled client-only member until a stronger discovery
-method is available.
+The crosshair target is intentionally not in this table. Neither architecture
+exposes it as a RecvProp. Ghidra shows the x86 client reading the client-only
+field at `player + 0x14F0`; chapter 004 records the x64
+`C_CSPlayer::GetIDTarget` path at `player + 0x1B20`. The two offsets remain
+architecture- and build-specific.
 
 ## Ghidra evidence for the current sample
 
@@ -186,11 +186,13 @@ Choose the source of truth that matches the kind of value:
 | Client-only state or derived transform | Client layout/function/signature evidence; not a netvar by default. |
 | Bone-matrix pointer | Verified client-side layout or a build-specific discovery method. |
 
-Netvars are not magic version independence. The table ABI is still 32-bit and
-the target can rename, remove, or reorganize properties. They are valuable
-because they preserve the engine's semantic field names and parent structure,
-which is generally more maintainable than scattering numbers through feature
-code.
+Netvars are not magic version independence. Their metadata ABI is
+architecture-specific: x64 widens pointer fields and moves members inside
+`ClientClass`, `RecvTable`, and `RecvProp`. The target can also rename, remove,
+or reorganize properties. Netvars remain valuable because they preserve the
+engine's semantic field names and parent structure, which is generally more
+maintainable than scattering numbers through feature code. Chapter 004 lists
+the verified x86/x64 metadata offsets and compile-time assertions.
 
 The checked-in `config/signatures.ini` remains the right place for byte
 patterns, operand rules, module names, and runtime feature settings. Netvar

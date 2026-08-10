@@ -16,20 +16,45 @@ using WeaponEntity = void *;
 struct WeaponSpreadState {
     WeaponEntity weapon = nullptr;
     std::uint32_t handle = 0;
+    std::uint16_t weaponInfoIndex = 0;
+    int weaponId = -1;
     int mode = 0;
+    int shotsFired = 0;
     int clip1 = -1;
     float inaccuracy = 0.0f;
+    float fireInaccuracy = 0.0f;
     float spread = 0.0f;
     float accuracyPenalty = 0.0f;
+    float fireAccuracyPenalty = 0.0f;
+    float decayedAccuracyPenalty = 0.0f;
+    float accuracyBaseline = 0.0f;
+    float accuracyRecoveryTime = 0.0f;
+    float intervalPerTick = 0.0f;
+    std::uintptr_t inaccuracyMethod = 0;
+    std::uintptr_t spreadMethod = 0;
+    std::uintptr_t accuracyBranchSlot = 0;
+    std::uintptr_t accuracyBranchObject = 0;
+    int accuracyBranchValue = -1;
+    float accuracyState = 0.0f;
     bool handleReadOk = false;
     bool weaponResolved = false;
+    bool weaponIdOk = false;
+    bool weaponInfoIndexOk = false;
     bool modeOk = false;
+    bool shotsFiredOk = false;
     bool clipOk = false;
     bool penaltyOk = false;
+    bool nextPenaltyOk = false;
+    bool preFireDecayOk = false;
     bool inaccuracyOk = false;
+    bool fireInaccuracyOk = false;
     bool spreadOk = false;
     bool methodsOk = false;
-    // True when methods are ok and values sit in soft plausible ranges.
+    bool accuracyBranchOk = false;
+    bool accuracyStateOk = false;
+    // The current CS fire path consumes the two getter values as separate
+    // polar radii: inaccuracy once per shot, spread once per pellet.
+    // True when both methods and the live clip state are usable.
     bool usableForCompensation = false;
 };
 
@@ -41,5 +66,8 @@ bool ReadWeaponSpreadState(const CCSPlayer *player, WeaponSpreadState &state);
 // Call virtual GetInaccuracy / GetSpread (slots 382 / 383). Fail closed.
 bool GetWeaponInaccuracy(WeaponEntity weapon, float &out);
 bool GetWeaponSpread(WeaponEntity weapon, float &out);
+bool GetWeaponMethodAddress(WeaponEntity weapon, int slot,
+                            std::uintptr_t &address);
+bool GetWeaponId(WeaponEntity weapon, int &out);
 
 } // namespace game

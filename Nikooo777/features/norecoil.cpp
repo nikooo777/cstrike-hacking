@@ -1,37 +1,37 @@
 #include "features/norecoil.h"
 
-#include "features/config.h"
-#include "game/entity_list.h"
-#include "math/vector.h"
+#include <cmath>
+
+#include "memory/mem.h"
+#include "netvars/netvars.h"
+#include "sdk/entity/c_cs_player.h"
 
 namespace features {
 
-void NoRecoil(CUserCmd *userCmd) {
-    if (!GetConfig().norecoil) {
-        return;
+bool ReadRecoilState(const CCSPlayer *player, RecoilState &state) {
+    state = {};
+    if (player == nullptr) {
+        return false;
     }
 
-    auto localPlayer = game::GetLocalPlayer();
-    if (!localPlayer) {
-        return;
+    const int localOffset =
+        netvars::GetOffset("DT_LocalPlayerExclusive", "m_Local");
+    const int punchOffset = netvars::GetOffset("DT_Local", "m_vecPunchAngle");
+    if (localOffset < 0 || punchOffset < 0) {
+        return false;
     }
 
-    static Vector3 oldPunch = {0, 0, 0};
-    auto shotsFired = localPlayer->m_iShotsFired();
-    auto punchAngle = localPlayer->m_Local().m_vecPunchAngle();
-
-    Vector3 tempAngle = {0, 0, 0};
-    if (shotsFired > 0) {
-        tempAngle.x = (userCmd->viewangles.x + oldPunch.x) - (punchAngle.x * 2);
-        tempAngle.y = (userCmd->viewangles.y + oldPunch.y) - (punchAngle.y * 2);
-        tempAngle.NormalizeAngles();
-        tempAngle.ClampAngles();
-        oldPunch.x = punchAngle.x * 2;
-        oldPunch.y = punchAngle.y * 2;
-        userCmd->viewangles = tempAngle;
-    } else {
-        oldPunch = {0, 0, 0};
+    const auto *playerBytes = reinterpret_cast<const char *>(player);
+    const auto *localBytes = playerBytes + localOffset;
+    if (!mem::ReadValue(localBytes + punchOffset, state.punchAngles)) {
+        state = {};
+        return false;
     }
+
+    state.punchReadable = std::isfinite(state.punchAngles.x) &&
+                           std::isfinite(state.punchAngles.y) &&
+                           std::isfinite(state.punchAngles.z);
+    return state.punchReadable;
 }
 
 } // namespace features

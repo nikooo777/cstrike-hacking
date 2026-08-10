@@ -2,6 +2,8 @@
 
 #include "sdk/user_cmd.h"
 
+struct CViewSetup;
+
 class ClientMode {
 public:
     // This overlay only uses the vtable. Do not add a 32-bit object-layout
@@ -22,7 +24,7 @@ public:
     virtual void Function13();
     virtual void Function14();
     virtual void Function15();
-    virtual void Function16();
+    virtual void OverrideView(CViewSetup *viewSetup);
     virtual void Function17();
     virtual void Function18();
     virtual void Function19();

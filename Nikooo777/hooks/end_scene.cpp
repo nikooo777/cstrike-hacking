@@ -10,7 +10,6 @@
 #include "imgui_impl_dx9.h"
 #include "imgui_impl_win32.h"
 #include "game/interfaces.h"
-#include "sdk/create_interface.h"
 #include "sdk/vgui_surface.h"
 
 extern LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
@@ -22,11 +21,8 @@ namespace {
 bool g_imguiInit = false;
 bool g_insertWasDown = false;
 bool g_menuInputMode = false;
-bool g_vguiLookupAttempted = false;
 WNDPROC g_originalWndProc = nullptr;
 HWND g_gameHwnd = nullptr;
-void *g_vguiSurface = nullptr;
-void *g_vguiInput = nullptr;
 
 bool IsMenuInputMessage(UINT msg) {
     switch (msg) {
@@ -85,97 +81,30 @@ LRESULT CALLBACK hkWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                : DefWindowProcA(hWnd, msg, wParam, lParam);
 }
 
-void ApplyVguiInputMode(bool enabled, bool updateCursorVisibilityOverride) {
-    if (!g_vguiLookupAttempted) {
-        g_vguiLookupAttempted = true;
-        g_vguiSurface = GetInterface("vguimatsurface.dll", "VGUI_Surface030");
-        g_vguiInput = GetInterface("vgui2.dll", "VGUI_Input005");
-    }
-
-    if (g_vguiSurface != nullptr) {
-        if (enabled) {
-            // Source's CalculateMouseVisible path unlocks before changing the
-            // cursor state; preserve that ordering here.
-            sdk::vgui::CallVFunc<void>(
-                g_vguiSurface, sdk::vgui::kSurfaceUnlockCursor);
-            if (updateCursorVisibilityOverride) {
-                // This target keeps a visibility reference count, so only
-                // change the override when the menu state changes.
-                sdk::vgui::CallVFunc<void>(
-                    g_vguiSurface,
-                    sdk::vgui::kSurfaceSetCursorAlwaysVisible,
-                    true);
-            }
-            sdk::vgui::CallVFunc<void>(
-                g_vguiSurface, sdk::vgui::kSurfaceSetCursor,
-                sdk::vgui::kCursorArrow);
-        } else {
-            if (updateCursorVisibilityOverride) {
-                sdk::vgui::CallVFunc<void>(
-                    g_vguiSurface,
-                    sdk::vgui::kSurfaceSetCursorAlwaysVisible,
-                    false);
-            }
-            sdk::vgui::CallVFunc<void>(
-                g_vguiSurface, sdk::vgui::kSurfaceSetCursor,
-                sdk::vgui::kCursorNone);
-            sdk::vgui::CallVFunc<void>(
-                g_vguiSurface, sdk::vgui::kSurfaceLockCursor);
-        }
-    } else {
-        std::cout << "VGUI surface interface unavailable; using Win32 cursor fallback"
-                  << std::endl;
+void ReleaseMenuMouse() {
+    if (auto *surface = game::GetVguiSurface(); surface != nullptr) {
+        sdk::vgui::CallVFunc<void>(
+            surface, sdk::vgui::kSurfaceUnlockCursor);
+        sdk::vgui::CallVFunc<void>(
+            surface, sdk::vgui::kSurfaceSetCursor,
+            sdk::vgui::kCursorArrow);
     }
 
     if (auto *baseClient = game::GetBaseClient(); baseClient != nullptr) {
-        if (enabled) {
-            // This is the engine-supported transition that stops CInput from
-            // recentering the OS cursor while a UI is active. Keep applying it
-            // while open because the game may reactivate input during a frame.
-            baseClient->IN_DeactivateMouse();
-        } else {
-            baseClient->IN_ActivateMouse();
-        }
-    }
-
-    if (g_vguiInput != nullptr) {
-        sdk::vgui::CallVFunc<void>(
-            g_vguiInput, sdk::vgui::kInputSetMouseCapture,
-            static_cast<void *>(nullptr));
-    }
-}
-
-void SetWin32CursorVisible(bool visible) {
-    int result = ShowCursor(visible ? TRUE : FALSE);
-    for (int i = 1; i < 16; ++i) {
-        if ((visible && result >= 0) || (!visible && result < 0)) {
-            break;
-        }
-        result = ShowCursor(visible ? TRUE : FALSE);
+        baseClient->IN_DeactivateMouse();
     }
 }
 
 void SetMenuInputMode(bool enabled) {
     if (enabled == g_menuInputMode) {
-        if (enabled) {
-            ApplyVguiInputMode(true, false);
-            ClipCursor(nullptr);
-        }
         return;
     }
 
     g_menuInputMode = enabled;
-    ApplyVguiInputMode(enabled, true);
-
     if (enabled) {
-        // Let the OS cursor move freely instead of following the game's
-        // first-person/raw-input capture while the menu is open.
+        ReleaseMenuMouse();
         ClipCursor(nullptr);
         SetCursor(LoadCursorA(nullptr, IDC_ARROW));
-        SetWin32CursorVisible(true);
-    } else {
-        ClipCursor(nullptr);
-        SetWin32CursorVisible(false);
     }
 }
 

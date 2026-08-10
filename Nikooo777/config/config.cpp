@@ -259,7 +259,7 @@ bool ReadSignature(const Ini &ini, const char *sectionName,
     }
 
     const auto operand = Lower(signature.operand);
-    if (operand != "abs32" && operand != "rip_rel32") {
+    if (operand != "abs32" && operand != "rip_rel32" && operand != "match") {
         error = std::string("unsupported operand type for ") + displayName +
                 ": " + signature.operand;
         return false;
@@ -383,10 +383,23 @@ bool Load(HMODULE selfModule, std::string &error) {
                        candidate.clientState, error) ||
         !ReadSignature(ini, "signature.clientmode", "ClientMode",
                        candidate.clientMode, error) ||
+        !ReadSignature(ini, "signature.weaponinfolookup", "WeaponInfoLookup",
+                       candidate.weaponInfoLookup, error) ||
+#if defined(_WIN64) || defined(_M_X64) || defined(__x86_64__)
+        !ReadSignature(ini, "signature.clientfirebullets", "ClientFireBullets",
+                       candidate.clientFireBullets, error) ||
+        !ReadSignature(ini, "signature.globalvars", "GlobalVars",
+                       candidate.globalVars, error) ||
+        !ReadSignature(ini, "signature.updateaccuracypenalty",
+                       "UpdateAccuracyPenalty",
+                       candidate.updateAccuracyPenalty, error) ||
+#endif
         !ReadInterface(ini, "interface.cliententitylist", "ClientEntityList",
                        candidate.clientEntityList, error) ||
         !ReadInterface(ini, "interface.engineclient", "EngineClient",
-                       candidate.engineClient, error)) {
+                       candidate.engineClient, error) ||
+        !ReadInterface(ini, "interface.enginetrace", "EngineTrace",
+                       candidate.engineTrace, error)) {
         return false;
     }
 

@@ -41,6 +41,7 @@ set(NIKOOO777_SOURCES
     Nikooo777/game/entity_list.cpp
     Nikooo777/game/interfaces.cpp
     Nikooo777/game/player.cpp
+    Nikooo777/game/timing.cpp
     Nikooo777/game/weapon_math.cpp
     Nikooo777/game/weapon.cpp
 
@@ -53,10 +54,13 @@ set(NIKOOO777_SOURCES
     Nikooo777/features/triggerbot.cpp
 
     Nikooo777/hooks/create_move.cpp
+    Nikooo777/hooks/client_fire_bullets.cpp
+    Nikooo777/hooks/update_accuracy_penalty.cpp
     Nikooo777/hooks/d3d9_device.cpp
     Nikooo777/hooks/end_scene.cpp
-    Nikooo777/hooks/frame_stage_notify.cpp
     Nikooo777/hooks/hooks.cpp
+    Nikooo777/hooks/lock_cursor.cpp
+    Nikooo777/hooks/override_view.cpp
 )
 
 # Dear ImGui (core + DX9 / Win32 backends; demo intentionally omitted)

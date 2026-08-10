@@ -90,21 +90,20 @@ The `CreateMove` hook already receives a `CUserCmd *`. Writing force-jump or
 force-attack globals is unnecessary when the desired operation is simply to
 set input buttons for the current command.
 
-The hook now calls the original first, then applies feature edits:
-
-~~~cpp
-const bool result = originalCreateMove(thisPtr, flInputSampleTime, userCmd);
-features::Bhop(userCmd);
-features::Triggerbot(userCmd);
-features::Aimbot(userCmd);
-features::NoRecoil(userCmd);
-return result;
-~~~
+The hook calls the original first, rejects the zero-sequence temporary input
+sample, applies button features, optionally selects an aim target, and then
+runs one shared recoil/spread composition pass. If command no-recoil changes
+the angle—or `silent_angles` requests suppression for another mutation—the
+hook returns `false` so the caller does not copy simulation angles into the
+camera. Chapter 005 documents that lifecycle in detail.
 
 That ordering matters: the original function gets the command populated before
 the feature code changes it. Bhop sets or clears `IN_JUMP`; triggerbot sets or
 clears `IN_ATTACK` only while its activation key is held. The feature code no
-longer writes arbitrary module memory.
+longer writes arbitrary module memory. The current implementation then
+composes aim, configured recoil, and optional fire-space spread compensation in
+one pass; see [005](005_no-spread-and-weapon-accuracy.md) for why those stages
+cannot safely be independent angle writers.
 
 ## When a signature is still the right answer
 
@@ -139,7 +138,8 @@ as complete:
 ## Current boundary
 
 The project no longer depends on the old entity-list and force-input globals.
-Client-only entity fields such as dormancy, absolute origin, and bone-matrix
-state still require their own layout, interface, function, or signature
-evidence. Server-side globals should only be reintroduced when a feature needs
+Later chapters preserve the distinction: chapter 004 resolves x64 dormancy
+through `IClientNetworkable` and derives the bone cache from `SetupBones`,
+while chapter 005 uses signatures only for weapon/fire state that has no named
+interface. Server-side globals should only be introduced when a feature needs
 them and their actual consumers have been documented.

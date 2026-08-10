@@ -4,6 +4,7 @@
 #include <limits>
 
 #include "core/constants.h"
+#include "game/interfaces.h"
 #include "memory/mem.h"
 
 namespace game {
@@ -20,6 +21,7 @@ constexpr std::uintptr_t kBoneMatrixStride = 0x30;
 constexpr std::size_t kGetClientNetworkableVtableIndex = 4;
 // IClientNetworkable::IsDormant, counted from the interface declaration.
 constexpr std::size_t kIsDormantVtableIndex = 8;
+constexpr std::size_t kFireAnglesVtableIndex = 143;
 #endif
 
 bool AddDoesNotOverflow(std::uintptr_t base, std::uintptr_t offset) {
@@ -109,10 +111,52 @@ bool GetDormancyInfo(const CBasePlayer *player, DormancyInfo &info) {
 #endif
 }
 
+bool GetLocalEyeAngles(const CBasePlayer *player, Vector3 &angles) {
+    angles = {};
+    if (player == nullptr) {
+        return false;
+    }
+
+#if defined(_WIN64) || defined(_M_X64) || defined(__x86_64__)
+    std::uintptr_t functionAddress = 0;
+    if (!ReadVtableFunction(reinterpret_cast<std::uintptr_t>(player),
+                            kFireAnglesVtableIndex, functionAddress)) {
+        return false;
+    }
+
+    using GetFireAnglesFn = const Vector3 *(*)(const CBasePlayer *);
+    auto getFireAngles = reinterpret_cast<GetFireAnglesFn>(functionAddress);
+    const Vector3 *fireAngles = getFireAngles(player);
+    if (fireAngles == nullptr || !mem::ReadValue(fireAngles, angles)) {
+        return false;
+    }
+
+    return std::isfinite(angles.x) && std::isfinite(angles.y) &&
+           std::isfinite(angles.z);
+#else
+    return false;
+#endif
+}
+
 bool IsValidTarget(const CCSPlayer *local, const CCSPlayer *other) {
     DormancyInfo dormancy;
     return other && IsAlive(other) && GetDormancyInfo(other, dormancy) &&
            !dormancy.dormant && IsEnemy(local, other);
+}
+
+bool IsVisible(const CCSPlayer *local, const CCSPlayer *other,
+               const Vector3 &targetPosition) {
+    if (local == nullptr || other == nullptr) {
+        return false;
+    }
+
+    float fraction = 0.0f;
+    if (!TraceLine(EyePosition(local), targetPosition, local, other,
+                   fraction)) {
+        return false;
+    }
+
+    return fraction >= 0.999f;
 }
 
 Vector3 EyePosition(const CBasePlayer *player) {

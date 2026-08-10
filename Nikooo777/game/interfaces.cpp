@@ -3,6 +3,7 @@
 #include <iostream>
 #include <cstddef>
 #include <cctype>
+#include <cmath>
 #include <limits>
 #include <string>
 
@@ -20,6 +21,8 @@ ClientMode *g_clientMode = nullptr;
 BaseClient *g_baseClient = nullptr;
 IClientEntityList *g_clientEntityList = nullptr;
 EngineClient *g_engineClient = nullptr;
+sdk::trace::EngineTrace *g_engineTrace = nullptr;
+void *g_vguiSurface = nullptr;
 std::uintptr_t g_clientStateAddr = 0;
 
 char *FindUniqueSignature(const config::Signature &signature,
@@ -141,6 +144,10 @@ bool DecodeConfiguredOperand(const char *name, char *scan,
             scan, signature.operandOffset, signature.instructionOffset,
             signature.instructionLength, value);
     }
+    if (operand == "match") {
+        value = reinterpret_cast<std::uintptr_t>(scan);
+        return true;
+    }
 
     std::cout << name << " has unsupported operand type: "
               << signature.operand << std::endl;
@@ -148,6 +155,11 @@ bool DecodeConfiguredOperand(const char *name, char *scan,
 }
 
 } // namespace
+
+char *FindConfiguredSignature(const config::Signature &signature,
+                              std::size_t &matchCount) {
+    return FindUniqueSignature(signature, matchCount);
+}
 
 ClientState *GetClientState() {
     if (g_clientState) {
@@ -327,6 +339,56 @@ EngineClient *GetEngineClient() {
     return g_engineClient;
 }
 
+sdk::trace::EngineTrace *GetEngineTrace() {
+    if (g_engineTrace != nullptr) {
+        return g_engineTrace;
+    }
+    if (!config::IsLoaded()) {
+        std::cout << "EngineTrace: config not loaded" << std::endl;
+        return nullptr;
+    }
+
+    const auto &definition = config::Get().engineTrace;
+    g_engineTrace = static_cast<sdk::trace::EngineTrace *>(
+        GetInterface(definition.module.c_str(), definition.name.c_str()));
+    if (g_engineTrace == nullptr) {
+        std::cout << "EngineTrace interface not found: "
+                  << definition.name << std::endl;
+        return nullptr;
+    }
+
+    if (config::Get().settings.validatePointers &&
+        !HasUsableVtableSlot(g_engineTrace,
+                             sdk::trace::kTraceRayVtableIndex)) {
+        std::cout << "EngineTrace TraceRay vtable slot is not usable"
+                  << std::endl;
+        g_engineTrace = nullptr;
+        return nullptr;
+    }
+
+    if (config::Get().settings.logMatchOffsets) {
+        std::cout << "EngineTrace source: " << definition.source
+                  << std::endl;
+        if (!definition.sourceReadme.empty()) {
+            std::cout << "EngineTrace README: "
+                      << definition.sourceReadme << std::endl;
+        }
+        std::cout << "EngineTrace discovery: "
+                  << definition.discovery << std::endl;
+    }
+    std::cout << "EngineTrace: " << definition.name << " at 0x"
+              << std::hex << g_engineTrace << std::dec << std::endl;
+    return g_engineTrace;
+}
+
+void *GetVguiSurface() {
+    if (g_vguiSurface == nullptr) {
+        g_vguiSurface =
+            GetInterface("vguimatsurface.dll", "VGUI_Surface030");
+    }
+    return g_vguiSurface;
+}
+
 namespace {
 
 bool CallEngineViewAngles(Vector3 &angles, int slotIndex) {
@@ -384,6 +446,63 @@ bool GetViewAngles(Vector3 &angles) {
 
 bool SetViewAngles(Vector3 &angles) {
     return CallEngineViewAngles(angles, kEngineClientSetViewAnglesVtableIndex);
+}
+
+bool TraceLine(const Vector3 &start, const Vector3 &end,
+               const void *skipFirst, const void *skipSecond, float &fraction) {
+    fraction = 0.0f;
+    if (!std::isfinite(start.x) || !std::isfinite(start.y) ||
+        !std::isfinite(start.z) || !std::isfinite(end.x) ||
+        !std::isfinite(end.y) || !std::isfinite(end.z)) {
+        return false;
+    }
+
+    auto *engineTrace = GetEngineTrace();
+    if (engineTrace == nullptr) {
+        return false;
+    }
+
+    auto *vtable = mem::ReadPointer<void>(engineTrace);
+    if (vtable == nullptr) {
+        return false;
+    }
+
+    const auto slot = sdk::trace::kTraceRayVtableIndex;
+    const auto vtableAddress = reinterpret_cast<std::uintptr_t>(vtable);
+    if (slot > ((std::numeric_limits<std::uintptr_t>::max)() -
+                vtableAddress) /
+                   sizeof(void *)) {
+        return false;
+    }
+
+    void *method = nullptr;
+    const auto methodAddress = vtableAddress + slot * sizeof(void *);
+    if (!mem::ReadValue(reinterpret_cast<const void *>(methodAddress), method) ||
+        method == nullptr || !mem::IsExecutable(method)) {
+        return false;
+    }
+
+    sdk::trace::Ray ray;
+    ray.Init(start, end);
+    sdk::trace::TraceFilterSkipEntities filter(skipFirst, skipSecond);
+    sdk::trace::GameTrace trace{};
+
+    bool called = false;
+    __try {
+        reinterpret_cast<sdk::trace::TraceRayFn>(method)(
+            engineTrace, ray, sdk::trace::kMaskVisible, &filter, &trace);
+        called = true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+
+    if (!called || !std::isfinite(trace.fraction) || trace.fraction < 0.0f ||
+        trace.fraction > 1.0f) {
+        return false;
+    }
+
+    fraction = trace.fraction;
+    return true;
 }
 
 std::uintptr_t GetClientStateAddress() {

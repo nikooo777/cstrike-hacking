@@ -1,49 +1,61 @@
 #include "features/aimbot.h"
 
+#include <limits>
+
+#include "core/constants.h"
 #include "features/config.h"
 #include "game/entity_list.h"
 #include "game/player.h"
 
 namespace features {
 
-void Aimbot(CUserCmd *userCmd) {
+bool Aimbot(CUserCmd *userCmd) {
+    if (userCmd == nullptr) {
+        return false;
+    }
     if (!GetConfig().aimbot) {
-        return;
+        return false;
     }
 
     auto localPlayer = game::GetLocalPlayer();
     if (!localPlayer) {
-        return;
+        return false;
     }
 
-    auto maxPlayers = 32;
-    auto closestDistance = 999999.f;
-    auto closestPlayerIndex = -1;
+    constexpr int kAimBone = 14;
+    const auto viewPosition = game::EyePosition(localPlayer);
+    auto closestDistance = (std::numeric_limits<float>::max)();
+    CCSPlayer *closestPlayer = nullptr;
+    Vector3 closestHead{};
 
-    for (int i = 1; i <= maxPlayers; i++) {
+    // Rebuild the candidate set every tick. This naturally drops a dead or
+    // stale target and allows the next visible target to be selected.
+    for (int i = 1; i < MAXPLAYERS; ++i) {
         auto p = game::GetPlayer(i);
         if (!game::IsValidTarget(localPlayer, p)) {
             continue;
         }
 
-        auto distance = localPlayer->m_vecOrigin().Distance(p->m_vecOrigin());
+        Vector3 headPosition{};
+        if (!game::GetBonePosition(p, kAimBone, headPosition) ||
+            !game::IsVisible(localPlayer, p, headPosition)) {
+            continue;
+        }
+
+        const auto distance = viewPosition.Distance(headPosition);
         if (distance < closestDistance) {
             closestDistance = distance;
-            closestPlayerIndex = i;
+            closestPlayer = p;
+            closestHead = headPosition;
         }
     }
 
-    if (closestPlayerIndex == -1) {
-        return;
+    if (closestPlayer == nullptr) {
+        return false;
     }
 
-    auto playerToAim = game::GetPlayer(closestPlayerIndex);
-    Vector3 headPos{};
-    if (!game::GetBonePosition(playerToAim, 14, headPos)) {
-        return;
-    }
-    auto viewPos = game::EyePosition(localPlayer);
-    userCmd->viewangles = viewPos.CalcAngle(headPos);
+    userCmd->viewangles = viewPosition.CalcAngle(closestHead);
+    return true;
 }
 
 } // namespace features

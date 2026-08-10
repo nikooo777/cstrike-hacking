@@ -111,8 +111,11 @@ evidence in the configuration file.
 In Ghidra, the x64 ClientMode evidence is:
 
 1. RTTI identifies `ClientModeShared`.
-2. Its vtable is at `client.dll+0x42DF88` in this sample.
-3. `CreateMove` remains vtable slot 21, matching
+2. The resolved CS client-mode object installs its final vtable at
+   `client.dll+0x477638`; `client.dll+0x42DF88` is the base
+   `ClientModeShared` vtable seen during construction, not the final table.
+3. `OverrideView` is slot 16 (`client.dll+0xE67C0`) and `CreateMove` is slot
+   21 (`client.dll+0xE5290`), matching
    `source-sdk-2013/src/game/client/iclientmode.h`.
 4. The initialization/accessor sequence at `client.dll+0x1F1443` starts with
    `LEA RBX, [global]` and resolves the live object at `client.dll+0x68D4A0`.
@@ -203,10 +206,61 @@ still exposes `GetClientEntity` at slot 3. The pointer width changes, but the
 method order is checked against the Source SDK header rather than inferred
 from the old object address.
 
-The x64 ClientMode vtable keeps `CreateMove` at slot 21. D3D9's
-`IDirect3DDevice9::EndScene` remains slot 42. VGUI method slots should still
-be verified against the loaded x64 VGUI interfaces before changing cursor or
-input behavior; an interface name alone does not prove a vtable layout.
+The x64 ClientMode vtable keeps `OverrideView` at slot 16 and `CreateMove` at
+slot 21. D3D9's `IDirect3DDevice9::EndScene` remains slot 42.
+
+### 6.1 Cursor ownership is a VGUI lifecycle problem
+
+Changing the Win32 cursor from `EndScene` is not sufficient to make an ImGui
+menu interactive. ImGui is not a native VGUI popup, so the engine's normal UI
+simulation still concludes that no UI needs the mouse. It locks the cursor and
+reactivates first-person mouse input on a later frame, which explains why the
+arrow can be visible while remaining pinned to the center of the game window.
+
+The exact installed `vguimatsurface.dll` binaries used for this pass are:
+
+| Architecture | SHA-256 |
+| --- | --- |
+| x64 | `47B534C9C354F3600A95B9E97750EF84F6DC46AACD9CF338A655E4D3D0D08B59` |
+| x86 | `71227A6CC7D8AF52D5A6B4468633F96E4AFB74E80AA6D2252E49DB48E094AA0C` |
+
+Following `VGUI_Surface030` to its returned object and vtable in Ghidra gives
+the same method order in both binaries:
+
+| Method | Slot | x64 module offset | x86 module offset |
+| --- | ---: | ---: | ---: |
+| `SetCursor` | 51 | `+0x12DC0` | `+0x44F80` |
+| `UnlockCursor` | 61 | `+0x13990` | `+0x45AB0` |
+| `LockCursor` | 62 | `+0x11040` | `+0x433F0` |
+| `CalculateMouseVisible` | 93 | `+0x9090` | `+0x3CD20` |
+| `IsCursorLocked` | 104 | `+0x10F10` | `+0x432A0` |
+
+The x64 surface vtable is at `vguimatsurface.dll+0xC83C0`; the x86 vtable is
+at `vguimatsurface.dll+0xD4B08`. The x64 slot-61 stub clears `ECX` before
+jumping to the common lock-state function, while slot 62 sets `CL` to one.
+The x86 stubs push zero and one respectively before calling their common
+implementation. These instruction-level differences confirm that the slots
+represent unlock and lock rather than relying only on SDK method order.
+
+Ghidra also confirms the caller in the matching x64 `engine.dll`.
+`CEngineVGui::Simulate` is at `engine.dll+0x227620`. It calls surface slot 93
+at `+0x227848`, checks slot 104 at `+0x22787E`, and then calls
+`VClient017::IN_ActivateMouse` slot 14 at `+0x22789B` when locked or
+`IN_DeactivateMouse` slot 15 at `+0x2278AA` when unlocked. The matching Source
+SDK follows the same `CalculateMouseVisible` then `VGui_ActivateMouse` flow.
+
+The implementation therefore hooks `VGUI_Surface030::LockCursor`, not the
+render hook. With the ImGui menu closed it calls the original method. With the
+menu open it calls verified slot 61 and selects the arrow through slot 51.
+The engine's following `IsCursorLocked` check then deactivates mouse input
+through its own normal path. Closing the menu restores the original lock and
+activation transition; unloading disables the hook before restoring ImGui and
+the window procedure.
+
+The x64 runtime smoke test confirmed the complete transition: pressing
+**Insert** directly from gameplay released the pointer, made the ImGui controls
+clickable without first opening another game UI, and returned input ownership
+to Source when the menu closed.
 
 The engine view-angle path is another good example of preferring a semantic
 interface over a guessed structure overlay. The current x64 engine registers
@@ -219,6 +273,50 @@ from `engine.dll+0x53E4E4`, `+0x53E4E8`, and `+0x53E4EC` into the caller's
 `QAngle` buffer. The implementation calls slot 19 through the configured
 `VEngineClient014` interface, so no x64 `ClientState` view-angle displacement
 is assumed.
+
+### 6.2 Trace visibility through `EngineTraceClient003`
+
+The aimbot needed a semantic visibility check rather than a guessed “visible”
+field. The x64 `engine.dll` program in Ghidra contains the string
+`EngineTraceClient003` at image address `0x1803A41E0`, or
+`engine.dll+0x3A41E0` with the sample image base `0x180000000`. Its reference at
+`engine.dll+0xCB70` loads the interface name and jumps to the common factory
+path at `engine.dll+0x2803F0`. This confirms that the client trace interface is
+registered by the engine; the Source SDK declaration supplies the method order
+that still has to be checked against the loaded vtable.
+
+The matching Source SDK `IEngineTrace` declaration is the useful ABI
+cross-check:
+
+```text
+slot 0  GetPointContents
+slot 1  GetPointContents_Collideable
+slot 2  ClipRayToEntity
+slot 3  ClipRayToCollideable
+slot 4  TraceRay(const Ray_t&, unsigned int, ITraceFilter*, trace_t*)
+```
+
+The implementation resolves `EngineTraceClient003` by name and validates slot
+4 as an executable address before calling it. Its local ABI view asserts the
+Source layouts used by the call: `Ray_t` is `0x50` bytes with the two boolean
+flags at `+0x40` and `+0x41`; `CGameTrace::fraction` is at `+0x2C`, while the
+full trace object is represented so the engine can write its later fields.
+The x86 function pointer uses `__thiscall`; x64 uses the normal Microsoft x64
+member-call ABI.
+
+Visibility uses Source's `MASK_VISIBLE` (`0x6081`) and an
+`ITraceFilter` that skips both the local entity and the candidate. A trace is
+considered clear only when `fraction >= 0.999`. A failed interface lookup,
+invalid vtable entry, exception, malformed fraction, unreadable bone cache, or
+non-finite point returns false instead of allowing the aimbot to guess.
+
+Target selection now iterates the complete feature player range (`1` through
+`MAXPLAYERS - 1`), reads the head bone before ranking, rejects blocked targets,
+and compares eye-to-head distance. The selection is rebuilt on every command;
+there is no stale target pointer to clear when a player dies, and a candidate
+whose bone cache is unavailable no longer aborts the whole search. This is a
+client-side line-of-sight approximation, not proof of server visibility, and
+the trace/filter ABI must be re-verified after an engine update.
 
 ## 7. Update the metadata ABI
 
@@ -327,6 +425,9 @@ The project keeps the x86 declarations under `_M_IX86` and the x64
 declarations under the unified branch. `__thiscall`, `__fastcall`, and
 `__stdcall` should not be treated as portable annotations when reviewing an
 x64 hook signature; compare the actual parameter list and register ABI.
+The same split is used by the verified `OverrideView(CViewSetup *)` hook at
+ClientMode slot 16. Its compile-time layout checks require
+`CViewSetup::origin == 0x40` and `CViewSetup::angles == 0x4C` on both builds.
 
 ## 9. Build the correct profile
 

@@ -26,14 +26,16 @@ This is a teaching codebase tied to one Counter-Strike: Source client build. It 
 | Experiment | Hook / input | Implementation |
 |------------|--------------|----------------|
 | Bunny hop | `CreateMove` / hold **Space** | `features/bhop.cpp` writes the client's force-jump command. |
-| Aimbot | `CreateMove` / hold **LMB** | `features/aimbot.cpp` chooses the closest valid enemy and aims at bone 14; x64 target validation uses `IClientNetworkable::IsDormant`. |
+| Aimbot | `CreateMove` / hold **LMB** | `features/aimbot.cpp` checks bone 14 and `IEngineTrace` visibility, then chooses the closest visible enemy; the candidate set is rebuilt every tick so dead or unreadable targets fall through to the next candidate. |
 | Triggerbot | `CreateMove` / hold **Shift** | `features/triggerbot.cpp` uses the client-only crosshair target (`m_iIDEntIndex`); the x64 field is `player + 0x1B20`, but the x64 profile keeps the feature off until its complete input/target path is validated. |
-| Command no-recoil | `CreateMove` | `features/norecoil.cpp` compensates view angles using the local punch angle. |
-| Visual no-recoil | `FrameStageNotify` | Temporarily hides the punch angle during `FRAME_RENDER_START`, then restores it. |
-| ImGui menu | `EndScene` + window procedure | `features/menu.cpp` exposes runtime toggles and is opened with **Insert**. |
-| Debug dump | `CreateMove` / **F1** | `features/debug_info.cpp` prints module bases, offsets, client state, local dormancy, target counts, bone-cache state, and local position. |
+| Command no-recoil | `CreateMove` | `features/perfect_nospread.cpp` composes the configured punch policy with aim and spread in fire space; `features/norecoil.cpp` supplies checked punch state. |
+| Perfect no-spread | `CreateMove` | Replays the verified x64 CS polar cone and applies inverse command-angle compensation; default off because the feature remains build-specific and exploratory. |
+| Silent angles | `CreateMove` return value | Prevents compensated command angles from being copied into the render camera. |
+| Visual no-recoil | `ClientMode::OverrideView` | Subtracts punch from the completed camera view without changing player state. |
+| ImGui menu | `EndScene` + window procedure + `VGUI_Surface030::LockCursor` | `features/menu.cpp` exposes runtime toggles and is opened with **Insert**; the cursor hook prevents the engine from re-locking the mouse while it is open. |
+| Debug dump | `CreateMove` / **F1** | Prints resolved state plus command, recoil, spread, and one-shot client fire-time diagnostics. |
 
-The x86 profile starts all gameplay experiments enabled; the x64 profile now enables the aimbot after validating `IClientNetworkable::IsDormant`, while triggerbot remains disabled. The x64 `C_BaseAnimating::SetupBones` cache fields are reached through the renderable subobject: Ghidra shows `[this + 0xB40]`/`[this + 0xB50]`, which translate to a matrix pointer at `entity + 0xB48` and a count at `entity + 0xB58` from the entity-list pointer. The corrected path has been runtime-validated on the current x64 build (`count=50`, readable and usable); the F1 dump continues to report the raw values and readability flags so future updates can be checked. The menu itself starts closed. MinHook installs `CreateMove`, `FrameStageNotify`, and D3D9 `EndScene`. The window procedure is replaced separately so **Insert** works even when `CreateMove` is not running.
+The x86 profile retains the legacy triggerbot experiment, while the x64 profile keeps triggerbot disabled and enables the aimbot after validating `IClientNetworkable::IsDormant`. Both profiles keep perfect no-spread off by default. The x64 `C_BaseAnimating::SetupBones` cache fields are reached through the renderable subobject: Ghidra shows `[this + 0xB40]`/`[this + 0xB50]`, which translate to a matrix pointer at `entity + 0xB48` and a count at `entity + 0xB58` from the entity-list pointer. The corrected path has been runtime-validated on the current x64 build (`count=50`, readable and usable); the F1 dump continues to report the raw values and readability flags so future updates can be checked. The menu itself starts closed. MinHook installs `CreateMove`, `ClientMode::OverrideView`, `VGUI_Surface030::LockCursor`, and D3D9 `EndScene`. The window procedure is replaced separately so **Insert** works even when `CreateMove` is not running.
 
 ### In-game controls
 
@@ -46,7 +48,7 @@ The x86 profile starts all gameplay experiments enabled; the x64 profile now ena
 | **Shift** | Hold for triggerbot when enabled. |
 | **LMB** | Hold for the aimbot when enabled. |
 
-The menu is initialized on the first successful D3D9 `EndScene` call. If it is closed, the hook skips ImGui's `NewFrame` and render work; **Insert** is still handled by the window procedure.
+The menu is initialized on the first successful D3D9 `EndScene` call. If it is closed, the hook skips ImGui's `NewFrame` and render work; **Insert** is still handled by the window procedure. While the menu is open, the verified `VGUI_Surface030::LockCursor` hook substitutes `UnlockCursor` and an arrow cursor. The engine then observes the unlocked surface and deactivates first-person mouse recentering through its normal input path. This path has been runtime-validated on x64: the pointer moves freely as soon as the menu opens, without first opening the console or settings.
 
 ## Runtime flow
 
@@ -56,12 +58,13 @@ The DLL keeps the entry point small and does the work on a worker thread:
 DllMain (process attach)
   -> hooks::MainThread
        -> load signatures.ini beside the DLL and apply runtime settings
-       -> resolve VClient017, ClientMode, ClientState, RecvTables, and a D3D9 vtable
+       -> resolve client, engine, trace, VGUI, RecvTable, and D3D9 objects
        -> install MinHook hooks
        -> run feature code from the appropriate callback
 
-CreateMove          -> bhop, triggerbot, aimbot, command no-recoil, F1 debug
-FrameStageNotify    -> temporary visual no-recoil adjustment
+CreateMove          -> buttons, aim, command recoil/spread composition, F1 debug
+OverrideView        -> read-only visual punch removal from the camera view
+LockCursor          -> preserve an unlocked OS cursor while the menu is open
 EndScene            -> ImGui frame/render when the menu is open
 Window procedure     -> Insert toggle and ImGui input
 END                 -> disable hooks, shut down ImGui, unload the DLL
@@ -79,10 +82,10 @@ Nikooo777/
   netvars/                 # runtime ClientClass/RecvTable/RecvProp resolver
   sdk/                     # Source-like types only (no feature logic)
     entity/                # CLocal, CBasePlayer, CCSPlayer
-    user_cmd.h, client_*.h, engine_client.h, client_entity_list.h, create_interface.*
+    user_cmd.h, client_*.h, engine_*.h, vgui_surface.h, view_setup.h, create_interface.*
   game/                    # live game access
     entity_list.*          # local player + IClientEntityList access
-    interfaces.*           # interfaces, EngineClient / ClientMode / ClientState resolve
+    interfaces.*           # interfaces, EngineClient / EngineTrace / ClientMode / ClientState resolve
     player.*               # IsAlive, IsEnemy, IsValidTarget, EyePosition
   hooks/                   # MinHook lifecycle + individual hooks + dummy D3D device
   features/                # gameplay logic + menu + config flags
@@ -214,8 +217,8 @@ This repository does not provide a standalone executable, injector, or anti-chea
 1. Build the DLL for the same architecture as the target game process.
 2. Start a permitted offline or local Counter-Strike: Source session.
 3. Load the DLL using an injector you already trust and are authorized to use.
-4. Check the console for `BaseClient`, `Netvars initialized`, `ClientEntityList`, `ClientMode`, `FrameStageNotify`, `CreateMove`, and `EndScene` addresses.
-5. Press **F1** to print the module/interface/netvar dump, then **Insert** to open the menu.
+4. Check the console for `BaseClient`, `Netvars initialized`, `ClientEntityList`, `ClientMode`, `OverrideView`, `CreateMove`, `LockCursor`, and `EndScene` addresses.
+5. Press **F1** to print the module/interface/netvar dump, then **Insert** and confirm the pointer moves freely without another UI being open.
 6. Press **End** to restore hooks and unload cleanly.
 7. Confirm the console shows the loaded config path and the signature provenance/match offsets before treating a resolution as valid.
 
@@ -231,11 +234,11 @@ These are the files to revisit when the client build changes:
 | `sdk/client_entity_list.h` / `game/entity_list.cpp` | Named `VClientEntityList003` interface and player-slot translation. |
 | `sdk/entity/*.h` | Netvar-backed entity accessors plus explicitly client-only fields and the remaining padded layout. |
 | `config/signatures.ini` / `config/signatures-x64.ini` | Architecture-specific patterns, named interfaces, operand decoders, pointer indirections, validation settings, feature defaults, and discovery links. |
-| `game/interfaces.cpp` | `CreateInterface` lookup plus configured entity-list, EngineClient, ClientState, and ClientMode resolution logic. |
-| `hooks/hooks.cpp` | Vtable slots for `CreateMove`, `FrameStageNotify`, and `EndScene`. |
+| `game/interfaces.cpp` | `CreateInterface` lookup plus configured entity-list, EngineClient, EngineTrace, ClientState, and ClientMode resolution logic. |
+| `hooks/hooks.cpp` | Vtable slots for `OverrideView`, `CreateMove`, `VGUI_Surface030::LockCursor`, and `EndScene`. |
 | `core/constants.h` | Entity stride, player limits, team values, and movement flags. |
 
-The debug dump reports module bases, runtime interface/client-only offsets, resolved netvar offsets, the resolved ClientState address, view angles from `VEngineClient`, the local bone-cache pointer/count, and the local player position when one is available. If a signature or required netvar is not found, or a read produces null/garbage data, treat the binary and the offsets as mismatched and re-dump them rather than guessing.
+The debug dump reports module bases, runtime interface/client-only offsets, resolved netvar offsets, the resolved ClientState address, view angles from `VEngineClient`, the local bone-cache pointer/count, aimbot valid/readable/visible target counts, and the local player position when one is available. If a signature or required netvar is not found, or a read produces null/garbage data, treat the binary and the offsets as mismatched and re-dump them rather than guessing.
 
 ## Tutorial notes
 
@@ -245,8 +248,8 @@ The debug dump reports module bases, runtime interface/client-only offsets, reso
 - [004 - x64 migration and ABI](aidocs/004_x64-migration-and-abi.md)
 - [005 - No-spread and weapon accuracy](aidocs/005_no-spread-and-weapon-accuracy.md)
 
-The architecture-selected signature profile is the source of truth for the two
-runtime signatures and the named client/engine interfaces. It intentionally
+The architecture-selected signature profile is the source of truth for the
+runtime signatures and named client/engine interfaces. It intentionally
 records how each pattern or interface was found, not just the bytes: update the
 provenance fields whenever a new build is reverse-engineered.
 
@@ -261,8 +264,10 @@ provenance fields whenever a new build is reverse-engineered.
 | `ClientState signature not found` or `ClientMode signature not found` | The byte pattern is for another client build. Confirm the executable/module version and update the pattern. |
 | `BaseClient is null` | `VClient017` was not exposed by the loaded client module, or the DLL was loaded at the wrong time/process. |
 | `ClientEntityList interface not found` | `VClientEntityList003` is unavailable or the configured client module is wrong. Re-check the interface name and the selected ABI. |
+| `EngineTrace interface not found` or all targets are invisible | `EngineTraceClient003`, `TraceRay` slot 4, the `Ray_t`/`CGameTrace` layout, or the entity-skip filter does not match the loaded engine. Re-check the x64 evidence in `aidocs/004`. |
 | `Failed to initialize netvars` | `GetAllClasses`, a required RecvTable, or a required property does not match this client build. Stop and re-check the table path and pointer-width assertions. |
 | D3D9 capture fails or the menu never appears | The code needs a visible, suitably sized game window and a D3D9 device. Wait until the game window is initialized and verify that the target is using D3D9. |
+| The menu opens but the cursor stays pinned to the center | Confirm `VGUI_Surface030` resolves and `LockCursor` is logged. Re-check surface slots 61/62 and the engine `CalculateMouseVisible`/`IsCursorLocked` path documented in `aidocs/004`; a Win32-only cursor change cannot stop Source input recentering. |
 | A feature crashes or reads implausible values | Stop testing: an entity/global offset is stale or the target is not the expected architecture/build. Disable the feature and return to Ghidra. |
 
 ## Known limitations
@@ -270,10 +275,11 @@ provenance fields whenever a new build is reverse-engineered.
 - Signatures, interface versions, vtable assumptions, and remaining client-only fields are tied to the client build this project was developed against.
 - Netvars remove several hardcoded entity displacements, but the `ClientClass`/`RecvTable` ABI, table names, property names, and type assumptions are still build-family dependencies.
 - Memory access is direct and lightly validated; this is experimental code, not a hardened runtime.
-- The aimbot is intentionally basic: closest valid target, bone 14, and an immediate angle change. It does not implement visibility checks, smoothing, weapon handling, or movement correction.
+- The aimbot remains intentionally basic: closest visible target, bone 14, and an immediate angle change. It does not implement smoothing, weapon handling, or movement correction; visibility is a client trace approximation and is not a server-side visibility guarantee.
 - The triggerbot is deliberately narrow: it uses the client-only crosshair target ID and requires the local player to be on the ground.
 - Rendering support is D3D9-specific and depends on finding the game's visible top-level window.
 - The deterministic seed/spread math has an offline CTest target; signatures, interfaces, timing, and object lifetimes still require an architecture-matched build followed by a permitted local smoke test.
+- Perfect no-spread is validated only for the documented x64 sample path and remains off by default; the x86 cone path and other weapon branches require their own runtime evidence.
 - Nothing here is intended to bypass VAC, FaceIT, or any other anti-cheat system.
 
 ## Videos / notes while reversing

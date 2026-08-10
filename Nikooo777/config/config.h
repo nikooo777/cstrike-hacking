@@ -63,8 +63,13 @@ struct Config {
     FeatureDefaults features;
     Signature clientState;
     Signature clientMode;
+    Signature weaponInfoLookup;
+    Signature clientFireBullets;
+    Signature globalVars;
+    Signature updateAccuracyPenalty;
     Interface clientEntityList;
     Interface engineClient;
+    Interface engineTrace;
 };
 
 bool Load(HMODULE selfModule, std::string &error);

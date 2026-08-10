@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -68,6 +69,57 @@ void TestCommandSeedResolution() {
     CHECK(fromStored);
 }
 
+void TestNextAccuracyPenalty() {
+    float penalty = 0.0f;
+    CHECK(game::PredictNextAccuracyPenalty(0, 10.0f, true, 0.01f, 1.0f,
+                                           0.02f, penalty));
+    CHECK(Near(penalty, 0.11f, 1e-6f));
+
+    CHECK(game::PredictNextAccuracyPenalty(2, 10.0f, false, 0.01f, 10.0f,
+                                           0.02f, penalty));
+    CHECK(Near(penalty, 2.71f, 1e-6f));
+
+    CHECK(game::PredictNextAccuracyPenalty(4, 10.0f, true, 0.01f, 0.5f,
+                                           0.02f, penalty));
+    CHECK(Near(penalty, 0.5f, 1e-6f));
+
+    CHECK(game::PredictNextAccuracyPenalty(3, -1.0f, true, 0.0f, 1.0f,
+                                           0.37f, penalty));
+    CHECK(Near(penalty, 0.37f, 1e-6f));
+    CHECK(!game::PredictNextAccuracyPenalty(-1, 10.0f, true, 0.0f, 1.0f,
+                                            0.0f, penalty));
+    CHECK(!game::PredictNextAccuracyPenalty(0, 0.0f, true, 0.0f, 1.0f,
+                                            0.0f, penalty));
+}
+
+void TestPreFireStateDecay() {
+    float penalty = 0.0f;
+    CHECK(game::PredictAccuracyPenaltyDecay(
+        0.03f, 0.007f, 0.4f, 0.015f, -0.7675284f, penalty));
+    const float expected =
+        std::exp((-0.7675284f / 0.4f) * 0.015f) * 0.023f + 0.007f;
+    CHECK(Near(penalty, expected, 1e-7f));
+
+    CHECK(game::PredictAccuracyPenaltyDecay(
+        0.004f, 0.007f, 0.4f, 0.015f, -2.3025851f, penalty));
+    CHECK(Near(penalty, 0.007f, 1e-7f));
+    CHECK(!game::PredictAccuracyPenaltyDecay(
+        0.03f, 0.007f, 0.0f, 0.015f, -2.3025851f, penalty));
+
+    const Vector3 punch{-4.631455f, 1.23305f, 0.0f};
+    Vector3 decayed{};
+    CHECK(game::PredictCssPunchDecay(punch, 0.015f, decayed));
+    const float length = std::sqrt(punch.x * punch.x +
+                                   punch.y * punch.y + 1e-10f);
+    const float scale =
+        std::max(length - (length * 0.5f + 10.0f) * 0.015f, 0.0f) /
+        length;
+    CHECK(Near(decayed.x, punch.x * scale, 1e-6f));
+    CHECK(Near(decayed.y, punch.y * scale, 1e-6f));
+    CHECK(!game::PredictCssPunchDecay(
+        punch, std::numeric_limits<float>::quiet_NaN(), decayed));
+}
+
 void TestUserCmdLayout() {
     CUserCmd command{};
     const std::size_t pointerSize = sizeof(void *);
@@ -91,20 +143,30 @@ void TestConeDeterminismAndValidation() {
     game::ConeOffsets second{};
     game::ConeOffsets different{};
 
-    CHECK(game::PredictConeOffsets(0x770b7539, 0.0346347f, 0.001f,
+    CHECK(game::PredictConeOffsets(0x770b7539, 0.0356347f, 0.0356347f,
                                    first));
-    CHECK(game::PredictConeOffsets(0x770b7539, 0.0346347f, 0.001f,
+    CHECK(game::PredictConeOffsets(0x770b7539, 0.0356347f, 0.0356347f,
                                    second));
     CHECK(first.ok && second.ok);
     CHECK(first.sx == second.sx && first.sy == second.sy);
 
-    CHECK(game::PredictConeOffsets(0x4e9e4160, 0.0346347f, 0.001f,
+    CHECK(game::PredictConeOffsets(0x4e9e4160, 0.0356347f, 0.0356347f,
                                    different));
     CHECK(first.sx != different.sx || first.sy != different.sy);
-    CHECK(Near(first.sx, 0.000680348f, 1e-6f));
-    CHECK(Near(first.sy, -0.0251312f, 1e-6f));
-    CHECK(Near(different.sx, 0.00960008f, 1e-6f));
-    CHECK(Near(different.sy, 0.00828513f, 1e-6f));
+    // Deterministic vectors for the current CS polar path: seed8+1, one
+    // inaccuracy sample, and one spread sample combined for pellet 0.
+    CHECK(Near(first.sx, 0.00823590f, 1e-6f));
+    CHECK(Near(first.sy, -0.0295979f, 1e-6f));
+    CHECK(Near(different.sx, 0.00784939f, 1e-6f));
+    CHECK(Near(different.sy, 0.0112452f, 1e-6f));
+
+    // Keep the radii independent; collapsing them into an equal X/Y scalar
+    // would fail this runtime-shaped rifle sample.
+    game::ConeOffsets unequalRadii{};
+    CHECK(game::PredictConeOffsets(0x7e036e50, 0.0259585f, 0.0006f,
+                                   unequalRadii));
+    CHECK(Near(unequalRadii.sx, -0.00781786f, 1e-6f));
+    CHECK(Near(unequalRadii.sy, -0.00764438f, 1e-6f));
 
     game::ConeOffsets invalid{1.0f, 2.0f, true};
     CHECK(!game::PredictConeOffsets(
@@ -119,7 +181,7 @@ void TestConeDeterminismAndValidation() {
 void TestCompensation() {
     const Vector3 intended{2.2411f, -93.4511f, 0.0f};
     game::ConeOffsets cone{};
-    CHECK(game::PredictConeOffsets(0x770b7539, 0.0346347f, 0.001f,
+    CHECK(game::PredictConeOffsets(0x770b7539, 0.0356347f, 0.0356347f,
                                    cone));
 
     game::CompensationResult result{};
@@ -141,14 +203,92 @@ void TestCompensation() {
     CHECK(neutral.forwardErrorDeg < 0.01f);
 }
 
+void TestConfigAwareShotPipeline() {
+    const Vector3 desired{8.0f, -45.0f, 0.0f};
+    const Vector3 punch{1.25f, -0.75f, 0.0f};
+
+    game::ShotAngleRequest request{};
+    request.desiredAngles = desired;
+    request.punchAngles = punch;
+    request.punchReadable = true;
+
+    game::ShotAngleResult result{};
+    CHECK(game::ComposeShotAngles(request, result));
+    CHECK(result.ok);
+    CHECK(!result.noRecoilApplied && !result.noSpreadApplied);
+    CHECK(Near(result.commandAngles.x, desired.x, 1e-6f));
+    CHECK(Near(result.commandAngles.y, desired.y, 1e-6f));
+
+    Vector3 naturalFire{};
+    AngleVectors(result.fireBaseAngles, &naturalFire, nullptr, nullptr);
+    Vector3 expectedNatural{};
+    AngleVectors(desired + punch * 2.0f, &expectedNatural, nullptr, nullptr);
+    CHECK(game::DirectionErrorDegrees(naturalFire, expectedNatural) < 1e-4f);
+
+    request.noRecoil = true;
+    CHECK(game::ComposeShotAngles(request, result));
+    CHECK(result.noRecoilApplied && !result.noSpreadApplied);
+    Vector3 noRecoilFire{};
+    CHECK(game::ForwardSpreadDirection(result.commandAngles + punch * 2.0f,
+                                       0.0f, 0.0f, noRecoilFire));
+    Vector3 desiredForward{};
+    AngleVectors(desired, &desiredForward, nullptr, nullptr);
+    CHECK(game::DirectionErrorDegrees(noRecoilFire, desiredForward) < 1e-4f);
+
+    request.noRecoil = false;
+    request.noSpread = true;
+    request.spreadAvailable = true;
+    request.spreadX = 0.018f;
+    request.spreadY = -0.011f;
+    CHECK(game::ComposeShotAngles(request, result));
+    CHECK(result.noSpreadApplied && !result.noRecoilApplied);
+    Vector3 noSpreadFire{};
+    CHECK(game::ForwardSpreadDirection(result.commandAngles + punch * 2.0f,
+                                       request.spreadX, request.spreadY,
+                                       noSpreadFire));
+    AngleVectors(result.fireBaseAngles, &expectedNatural, nullptr, nullptr);
+    CHECK(game::DirectionErrorDegrees(noSpreadFire, expectedNatural) < 0.01f);
+
+    request.noRecoil = true;
+    CHECK(game::ComposeShotAngles(request, result));
+    CHECK(result.noRecoilApplied && result.noSpreadApplied);
+    Vector3 bothFire{};
+    CHECK(game::ForwardSpreadDirection(result.commandAngles + punch * 2.0f,
+                                       request.spreadX, request.spreadY,
+                                       bothFire));
+    AngleVectors(desired, &desiredForward, nullptr, nullptr);
+    CHECK(game::DirectionErrorDegrees(bothFire, desiredForward) < 0.01f);
+
+    request.noSpread = false;
+    CHECK(game::ComposeShotAngles(request, result));
+    CHECK(result.noRecoilApplied && !result.noSpreadApplied);
+    Vector3 manualRecoilFire{};
+    CHECK(game::ForwardSpreadDirection(result.commandAngles + punch * 2.0f,
+                                       0.0f, 0.0f, manualRecoilFire));
+    CHECK(game::DirectionErrorDegrees(manualRecoilFire, desiredForward) <
+          1e-4f);
+
+    request.noRecoil = false;
+    request.desiredAngles = desired;
+    request.noSpread = true;
+    request.spreadAvailable = false;
+    CHECK(game::ComposeShotAngles(request, result));
+    CHECK(!result.noRecoilApplied && !result.noSpreadApplied);
+    CHECK(Near(result.commandAngles.x, desired.x, 1e-6f));
+    CHECK(Near(result.commandAngles.y, desired.y, 1e-6f));
+}
+
 } // namespace
 
 int main() {
     TestCommandSeeds();
     TestCommandSeedResolution();
+    TestNextAccuracyPenalty();
+    TestPreFireStateDecay();
     TestUserCmdLayout();
     TestConeDeterminismAndValidation();
     TestCompensation();
+    TestConfigAwareShotPipeline();
 
     if (g_failures != 0) {
         std::cerr << g_failures << " test assertion(s) failed\n";

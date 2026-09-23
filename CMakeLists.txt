@@ -34,6 +34,7 @@ set(NIKOOO777_SOURCES
     Nikooo777/config/config.cpp
     Nikooo777/memory/mem.cpp
     Nikooo777/math/vector.cpp
+    Nikooo777/math/projection.cpp
     Nikooo777/netvars/netvars.cpp
 
     Nikooo777/sdk/create_interface.cpp
@@ -41,12 +42,15 @@ set(NIKOOO777_SOURCES
     Nikooo777/game/entity_list.cpp
     Nikooo777/game/interfaces.cpp
     Nikooo777/game/player.cpp
+    Nikooo777/game/model.cpp
+    Nikooo777/game/render_state.cpp
     Nikooo777/game/timing.cpp
     Nikooo777/game/weapon_math.cpp
     Nikooo777/game/weapon.cpp
 
     Nikooo777/features/aimbot.cpp
     Nikooo777/features/bhop.cpp
+    Nikooo777/features/bone_esp.cpp
     Nikooo777/features/debug_info.cpp
     Nikooo777/features/menu.cpp
     Nikooo777/features/norecoil.cpp
@@ -128,4 +132,14 @@ if (BUILD_TESTING)
         ${CMAKE_SOURCE_DIR}/Nikooo777
     )
     add_test(NAME weapon_math COMMAND weapon_math_tests)
+
+    add_executable(projection_tests
+        tests/projection_tests.cpp
+        Nikooo777/math/projection.cpp
+        Nikooo777/math/vector.cpp
+    )
+    target_include_directories(projection_tests PRIVATE
+        ${CMAKE_SOURCE_DIR}/Nikooo777
+    )
+    add_test(NAME projection COMMAND projection_tests)
 endif()

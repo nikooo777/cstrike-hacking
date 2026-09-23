@@ -4,6 +4,7 @@
 #include <iostream>
 
 #include "features/config.h"
+#include "features/bone_esp.h"
 #include "features/menu.h"
 #include "hooks/d3d9_device.h"
 #include "imgui.h"
@@ -199,15 +200,24 @@ HRESULT hkEndScene(IDirect3DDevice9 *device) {
     SetMenuInputMode(features::GetConfig().menuOpen);
     InitImGui(device);
 
-    // Skip the whole frame path when the menu is closed; INSERT is polled
-    // outside the ImGui frame path.
-    if (g_imguiInit && features::GetConfig().menuOpen) {
-        ImGui::GetIO().MouseDrawCursor = false;
+    if (g_imguiInit) {
         ImGui_ImplDX9_NewFrame();
         ImGui_ImplWin32_NewFrame();
         ImGui::NewFrame();
 
-        features::Menu();
+        if (features::GetConfig().menuOpen) {
+            ImGui::GetIO().MouseDrawCursor = false;
+            features::Menu();
+        }
+
+        D3DVIEWPORT9 viewport{};
+        if (device == nullptr || FAILED(device->GetViewport(&viewport))) {
+            viewport = {};
+        }
+        features::DrawBoneEsp(static_cast<float>(viewport.X),
+                              static_cast<float>(viewport.Y),
+                              static_cast<float>(viewport.Width),
+                              static_cast<float>(viewport.Height));
 
         ImGui::EndFrame();
         ImGui::Render();

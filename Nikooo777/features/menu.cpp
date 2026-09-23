@@ -16,6 +16,7 @@ void Menu() {
     ImGui::Checkbox("Visual no recoil (camera)", &cfg.visualNoRecoil);
     ImGui::Checkbox("Perfect nospread (cmd, default off)", &cfg.perfectNoSpread);
     ImGui::Checkbox("Silent angles (restore camera)", &cfg.silentAngles);
+    ImGui::Checkbox("Bone ESP (experimental)", &cfg.boneEsp);
     ImGui::Separator();
     ImGui::Text("INSERT: toggle menu");
     ImGui::Text("F1: console debug dump");

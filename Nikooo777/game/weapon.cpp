@@ -3,6 +3,7 @@
 #include <Windows.h>
 
 #include <cmath>
+#include <cstring>
 #include <limits>
 
 #include "config/config.h"
@@ -43,7 +44,14 @@ constexpr std::size_t kAccuracyMaxOffset = 0x8d8;
 #if defined(_WIN64) || defined(_M_X64) || defined(__x86_64__)
 constexpr std::size_t kAccuracyStateOffset = 0xca8;
 constexpr std::size_t kWeaponInfoIndexOffset = 0xc62;
-constexpr std::size_t kAccuracyBranchObjectOffset = 0x58;
+constexpr std::size_t kAccuracyModelLoadOffset = 0x6;
+constexpr std::uint8_t kAccuracyModelLoad[] = {0x48, 0x8b, 0x05};
+constexpr std::size_t kAccuracyModelLoadDisplacement = 0x3;
+constexpr std::size_t kAccuracyModelLoadLength = 0x7;
+constexpr std::size_t kAccuracyModelCompareOffset = 0x10;
+constexpr std::uint8_t kAccuracyModelCompare[] = {0x83, 0x78, 0x58, 0x01};
+constexpr std::size_t kConVarIntValueOffset = 0x58;
+constexpr int kUnmodeledAccuracyModel = 1;
 constexpr std::size_t kMoveTypeOffset = 0x1f4;
 constexpr std::size_t kAccuracyModifierOffset = 0xbf4;
 constexpr std::size_t kCrouchInaccuracyOffset = 0x8e4;
@@ -96,56 +104,61 @@ bool ReadWeaponMethod(WeaponEntity weapon, int slot, void *&method) {
 }
 
 #if defined(_WIN64) || defined(_M_X64) || defined(__x86_64__)
-bool ReadAccuracyBranchState(WeaponEntity weapon, WeaponSpreadState &state) {
+bool ReadAccuracyModel(WeaponEntity weapon, WeaponSpreadState &state) {
     void *method = nullptr;
     if (!ReadWeaponMethod(weapon, kGetInaccuracySlot, method)) {
         return false;
     }
 
-    std::uint8_t bytes[0x14]{};
-    if (!mem::ReadBytes(method, bytes, sizeof(bytes)) ||
-        bytes[0x6] != 0x48 || bytes[0x7] != 0x8b || bytes[0x8] != 0x05 ||
-        bytes[0x10] != 0x83 || bytes[0x11] != 0x78 ||
-        bytes[0x12] != 0x58 || bytes[0x13] != 0x01) {
+    std::uint8_t prologue[kAccuracyModelCompareOffset +
+                          sizeof(kAccuracyModelCompare)]{};
+    if (!mem::ReadBytes(method, prologue, sizeof(prologue)) ||
+        std::memcmp(prologue + kAccuracyModelLoadOffset, kAccuracyModelLoad,
+                    sizeof(kAccuracyModelLoad)) != 0 ||
+        std::memcmp(prologue + kAccuracyModelCompareOffset,
+                    kAccuracyModelCompare,
+                    sizeof(kAccuracyModelCompare)) != 0) {
         return false;
     }
 
     const auto methodAddress = reinterpret_cast<std::uintptr_t>(method);
-    if (methodAddress > (std::numeric_limits<std::uintptr_t>::max)() - 0x6) {
+    if (methodAddress > (std::numeric_limits<std::uintptr_t>::max)() -
+                            kAccuracyModelLoadOffset) {
         return false;
     }
 
-    std::uintptr_t branchSlot = 0;
+    std::uintptr_t parentSlot = 0;
     if (!mem::DecodeRipRelative32(
-            reinterpret_cast<const void *>(methodAddress + 0x6), 0x3, 0, 0x7,
-            branchSlot)) {
+            reinterpret_cast<const void *>(methodAddress +
+                                           kAccuracyModelLoadOffset),
+            kAccuracyModelLoadDisplacement, 0, kAccuracyModelLoadLength,
+            parentSlot)) {
         return false;
     }
 
-    std::uintptr_t branchObject = 0;
-    if (!mem::ReadValue(reinterpret_cast<const void *>(branchSlot),
-                        branchObject) ||
-        branchObject == 0 ||
-        branchObject > (std::numeric_limits<std::uintptr_t>::max)() -
-                           kAccuracyBranchObjectOffset) {
+    std::uintptr_t conVar = 0;
+    if (!mem::ReadValue(reinterpret_cast<const void *>(parentSlot), conVar) ||
+        conVar == 0 ||
+        conVar > (std::numeric_limits<std::uintptr_t>::max)() -
+                     kConVarIntValueOffset) {
         return false;
     }
 
-    int branchValue = -1;
-    if (!mem::ReadValue(reinterpret_cast<const void *>(
-                            branchObject + kAccuracyBranchObjectOffset),
-                        branchValue)) {
+    int model = -1;
+    if (!mem::ReadValue(
+            reinterpret_cast<const void *>(conVar + kConVarIntValueOffset),
+            model)) {
         return false;
     }
 
-    state.accuracyBranchSlot = branchSlot;
-    state.accuracyBranchObject = branchObject;
-    state.accuracyBranchValue = branchValue;
-    state.accuracyBranchOk = true;
+    state.accuracyModelParentSlot = parentSlot;
+    state.accuracyModelConVar = conVar;
+    state.accuracyModel = model;
+    state.accuracyModelOk = true;
     return true;
 }
 #else
-bool ReadAccuracyBranchState(WeaponEntity, WeaponSpreadState &) {
+bool ReadAccuracyModel(WeaponEntity, WeaponSpreadState &) {
     return false;
 }
 #endif
@@ -263,7 +276,8 @@ bool PredictPreFireAccuracy(const CCSPlayer *player, void *weaponInfo,
                             WeaponSpreadState &state) {
     if (player == nullptr || weaponInfo == nullptr ||
         !state.modeOk || !state.penaltyOk || !state.inaccuracyOk ||
-        !state.accuracyBranchOk || state.accuracyBranchValue == 1) {
+        !state.accuracyModelOk ||
+        state.accuracyModel == kUnmodeledAccuracyModel) {
         return false;
     }
 
@@ -474,9 +488,9 @@ bool ReadWeaponSpreadState(const CCSPlayer *player, WeaponSpreadState &state) {
     GetWeaponMethodAddress(state.weapon, kGetInaccuracySlot,
                            state.inaccuracyMethod);
     GetWeaponMethodAddress(state.weapon, kGetSpreadSlot, state.spreadMethod);
-    ReadAccuracyBranchState(state.weapon, state);
+    ReadAccuracyModel(state.weapon, state);
 #if defined(_WIN64) || defined(_M_X64) || defined(__x86_64__)
-    if (state.accuracyBranchOk) {
+    if (state.accuracyModelOk) {
         const auto weaponAddress = reinterpret_cast<std::uintptr_t>(state.weapon);
         if (weaponAddress <= (std::numeric_limits<std::uintptr_t>::max)() -
                                  kAccuracyStateOffset) {

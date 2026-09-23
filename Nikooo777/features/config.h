@@ -13,6 +13,7 @@ struct Config {
     bool visualNoRecoil = true;
     bool perfectNoSpread = false;
     bool silentAngles = true;
+    bool boneEsp = false;
     bool menuOpen = false; // INSERT toggles; closed by default so inject is quiet
 };
 
@@ -30,6 +31,7 @@ inline void ApplyConfig(const config::Config &source) {
     target.visualNoRecoil = source.features.visualNoRecoil;
     target.perfectNoSpread = source.features.perfectNoSpread;
     target.silentAngles = source.features.silentAngles;
+    target.boneEsp = source.features.boneEsp;
     target.menuOpen = source.features.menuOpen;
 }
 

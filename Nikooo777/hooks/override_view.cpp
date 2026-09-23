@@ -3,6 +3,7 @@
 #include "features/config.h"
 #include "features/norecoil.h"
 #include "game/entity_list.h"
+#include "game/render_state.h"
 #include "sdk/view_setup.h"
 
 namespace hooks {
@@ -15,16 +16,18 @@ void hkOverrideView(void *thisPtr, CViewSetup *viewSetup) {
 #endif
     originalOverrideView(thisPtr, viewSetup);
 
-    if (!features::GetConfig().visualNoRecoil || viewSetup == nullptr) {
+    if (viewSetup == nullptr) {
         return;
     }
 
-    features::RecoilState recoil{};
-    if (!features::ReadRecoilState(game::GetLocalPlayer(), recoil)) {
-        return;
+    if (features::GetConfig().visualNoRecoil) {
+        features::RecoilState recoil{};
+        if (features::ReadRecoilState(game::GetLocalPlayer(), recoil)) {
+            viewSetup->angles = viewSetup->angles - recoil.punchAngles;
+        }
     }
 
-    viewSetup->angles = viewSetup->angles - recoil.punchAngles;
+    game::CaptureViewSetup(*viewSetup);
 }
 
 } // namespace hooks

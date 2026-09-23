@@ -32,9 +32,9 @@ struct WeaponSpreadState {
     float intervalPerTick = 0.0f;
     std::uintptr_t inaccuracyMethod = 0;
     std::uintptr_t spreadMethod = 0;
-    std::uintptr_t accuracyBranchSlot = 0;
-    std::uintptr_t accuracyBranchObject = 0;
-    int accuracyBranchValue = -1;
+    std::uintptr_t accuracyModelParentSlot = 0;
+    std::uintptr_t accuracyModelConVar = 0;
+    int accuracyModel = -1;
     float accuracyState = 0.0f;
     bool handleReadOk = false;
     bool weaponResolved = false;
@@ -50,7 +50,7 @@ struct WeaponSpreadState {
     bool fireInaccuracyOk = false;
     bool spreadOk = false;
     bool methodsOk = false;
-    bool accuracyBranchOk = false;
+    bool accuracyModelOk = false;
     bool accuracyStateOk = false;
     // The current CS fire path consumes the two getter values as separate
     // polar radii: inaccuracy once per shot, spread once per pellet.

@@ -8,6 +8,7 @@
 #include "core/constants.h"
 #include "core/modules.h"
 #include "features/config.h"
+#include "features/bone_esp.h"
 #include "features/norecoil.h"
 #include "features/perfect_nospread.h"
 #include "game/entity_list.h"
@@ -53,7 +54,7 @@ struct ClientFireDiagnosticState {
     int weaponId = -1;
     int weaponInfoIndex = -1;
     int mode = 0;
-    int accuracyBranch = -1;
+    int accuracyModel = -1;
     int penaltyUpdateCalls = 0;
     bool armed = false;
     bool commandCaptured = false;
@@ -62,7 +63,7 @@ struct ClientFireDiagnosticState {
     bool weaponIdOk = false;
     bool weaponInfoIndexOk = false;
     bool modeOk = false;
-    bool accuracyBranchOk = false;
+    bool accuracyModelOk = false;
     bool radiiOk = false;
     bool preFireDecayOk = false;
     bool predictedPunchOk = false;
@@ -184,8 +185,8 @@ void CaptureClientFireCommand(const CUserCmd *userCmd) {
         capture.weaponInfoIndexOk = spreadState.weaponInfoIndexOk;
         capture.mode = spreadState.mode;
         capture.modeOk = spreadState.modeOk;
-        capture.accuracyBranch = spreadState.accuracyBranchValue;
-        capture.accuracyBranchOk = spreadState.accuracyBranchOk;
+        capture.accuracyModel = spreadState.accuracyModel;
+        capture.accuracyModelOk = spreadState.accuracyModelOk;
         capture.getterInaccuracy = spreadState.inaccuracy;
         capture.predictedFireInaccuracy = spreadState.fireInaccuracy;
         capture.getterSpread = spreadState.spread;
@@ -270,9 +271,9 @@ void RecordClientFireBullets(int playerIndex, const Vector3 *origin,
     std::cout
               << " mode=" << mode
               << " command=" << capture.commandNumber
-              << " branch=";
-    if (capture.accuracyBranchOk) {
-        std::cout << capture.accuracyBranch;
+              << " accuracy_model=";
+    if (capture.accuracyModelOk) {
+        std::cout << capture.accuracyModel;
     } else {
         std::cout << "unavailable";
     }
@@ -603,6 +604,21 @@ void PrintDebugInfo(const CUserCmd *userCmd) {
                   << "C_BaseAnimating::m_CachedBoneData)"
                   << std::dec << std::endl;
 
+        const auto boneEsp = features::GetBoneEspDiagnostics();
+        std::cout << "bone esp: enabled="
+                  << (boneEsp.enabled ? "yes" : "no")
+                  << " viewport="
+                  << (boneEsp.viewportReady ? "ready" : "unavailable")
+                  << " view=" << (boneEsp.viewReady ? "ready" : "unavailable")
+                  << " matrix="
+                  << (boneEsp.matrixReady ? "ready" : "unavailable")
+                  << " candidates=" << boneEsp.candidates
+                  << " hierarchies=" << boneEsp.hierarchies
+                  << " projectedLines=" << boneEsp.projectedLines
+                  << " model=0x" << std::hex << boneEsp.modelAddress
+                  << " studio=0x" << boneEsp.studioHeaderAddress << std::dec
+                  << " bones=" << boneEsp.boneCount << std::endl;
+
         std::cout << "my position:" << local->m_vecOrigin() << std::endl;
 
         if (userCmd != nullptr) {
@@ -633,12 +649,12 @@ void PrintDebugInfo(const CUserCmd *userCmd) {
                       << spreadState.inaccuracyMethod
                       << " spread_method=0x" << spreadState.spreadMethod
                       << std::dec << std::endl;
-            std::cout << "  accuracy branch: slot=0x" << std::hex
-                      << spreadState.accuracyBranchSlot << " object=0x"
-                      << spreadState.accuracyBranchObject << std::dec
-                      << " value=";
-            if (spreadState.accuracyBranchOk) {
-                std::cout << spreadState.accuracyBranchValue;
+            std::cout << "  accuracy model: weapon_accuracy_model parent_slot=0x"
+                      << std::hex << spreadState.accuracyModelParentSlot
+                      << " convar=0x" << spreadState.accuracyModelConVar
+                      << std::dec << " value=";
+            if (spreadState.accuracyModelOk) {
+                std::cout << spreadState.accuracyModel;
             } else {
                 std::cout << "unavailable";
             }
@@ -648,7 +664,7 @@ void PrintDebugInfo(const CUserCmd *userCmd) {
             } else {
                 std::cout << "unavailable";
             }
-            std::cout << " (branch 1=special, other=base)" << std::endl;
+            std::cout << " (1=unmodeled, other=modeled)" << std::endl;
             std::cout << "  mode="
                       << (spreadState.modeOk ? std::to_string(spreadState.mode)
                                              : std::string("unread"))

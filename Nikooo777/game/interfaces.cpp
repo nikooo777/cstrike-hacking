@@ -22,6 +22,8 @@ BaseClient *g_baseClient = nullptr;
 IClientEntityList *g_clientEntityList = nullptr;
 EngineClient *g_engineClient = nullptr;
 sdk::trace::EngineTrace *g_engineTrace = nullptr;
+sdk::render::RenderView *g_renderView = nullptr;
+sdk::render::ModelInfo *g_modelInfo = nullptr;
 void *g_vguiSurface = nullptr;
 std::uintptr_t g_clientStateAddr = 0;
 
@@ -381,6 +383,88 @@ sdk::trace::EngineTrace *GetEngineTrace() {
     return g_engineTrace;
 }
 
+sdk::render::RenderView *GetRenderView() {
+    if (g_renderView != nullptr) {
+        return g_renderView;
+    }
+    if (!config::IsLoaded()) {
+        std::cout << "RenderView: config not loaded" << std::endl;
+        return nullptr;
+    }
+
+    const auto &definition = config::Get().renderView;
+    g_renderView = static_cast<sdk::render::RenderView *>(
+        GetInterface(definition.module.c_str(), definition.name.c_str()));
+    if (g_renderView == nullptr) {
+        std::cout << "RenderView interface not found: " << definition.name
+                  << std::endl;
+        return nullptr;
+    }
+
+    if (config::Get().settings.validatePointers &&
+        !HasUsableVtableSlot(
+            g_renderView, sdk::render::kGetMatricesForViewVtableIndex)) {
+        std::cout << "RenderView GetMatricesForView vtable slot is not usable"
+                  << std::endl;
+        g_renderView = nullptr;
+        return nullptr;
+    }
+
+    if (config::Get().settings.logMatchOffsets) {
+        std::cout << "RenderView source: " << definition.source << std::endl;
+        if (!definition.sourceReadme.empty()) {
+            std::cout << "RenderView README: " << definition.sourceReadme
+                      << std::endl;
+        }
+        std::cout << "RenderView discovery: " << definition.discovery
+                  << std::endl;
+    }
+    std::cout << "RenderView: " << definition.name << " at 0x" << std::hex
+              << g_renderView << std::dec << std::endl;
+    return g_renderView;
+}
+
+sdk::render::ModelInfo *GetModelInfo() {
+    if (g_modelInfo != nullptr) {
+        return g_modelInfo;
+    }
+    if (!config::IsLoaded()) {
+        std::cout << "ModelInfo: config not loaded" << std::endl;
+        return nullptr;
+    }
+
+    const auto &definition = config::Get().modelInfo;
+    g_modelInfo = static_cast<sdk::render::ModelInfo *>(
+        GetInterface(definition.module.c_str(), definition.name.c_str()));
+    if (g_modelInfo == nullptr) {
+        std::cout << "ModelInfo interface not found: " << definition.name
+                  << std::endl;
+        return nullptr;
+    }
+
+    if (config::Get().settings.validatePointers &&
+        !HasUsableVtableSlot(
+            g_modelInfo, sdk::render::kGetStudiomodelVtableIndex)) {
+        std::cout << "ModelInfo GetStudiomodel vtable slot is not usable"
+                  << std::endl;
+        g_modelInfo = nullptr;
+        return nullptr;
+    }
+
+    if (config::Get().settings.logMatchOffsets) {
+        std::cout << "ModelInfo source: " << definition.source << std::endl;
+        if (!definition.sourceReadme.empty()) {
+            std::cout << "ModelInfo README: " << definition.sourceReadme
+                      << std::endl;
+        }
+        std::cout << "ModelInfo discovery: " << definition.discovery
+                  << std::endl;
+    }
+    std::cout << "ModelInfo: " << definition.name << " at 0x" << std::hex
+              << g_modelInfo << std::dec << std::endl;
+    return g_modelInfo;
+}
+
 void *GetVguiSurface() {
     if (g_vguiSurface == nullptr) {
         g_vguiSurface =
@@ -446,6 +530,56 @@ bool GetViewAngles(Vector3 &angles) {
 
 bool SetViewAngles(Vector3 &angles) {
     return CallEngineViewAngles(angles, kEngineClientSetViewAnglesVtableIndex);
+}
+
+bool GetWorldToProjection(const CViewSetup &viewSetup,
+                          sdk::render::Matrix4x4 &worldToProjection) {
+    worldToProjection = {};
+    auto *renderView = GetRenderView();
+    if (renderView == nullptr) {
+        return false;
+    }
+
+    auto *vtable = mem::ReadPointer<void>(renderView);
+    if (vtable == nullptr) {
+        return false;
+    }
+
+    const auto vtableAddress = reinterpret_cast<std::uintptr_t>(vtable);
+    const auto slot = sdk::render::kGetMatricesForViewVtableIndex;
+    if (slot > (std::numeric_limits<std::size_t>::max)() / sizeof(void *) ||
+        vtableAddress > (std::numeric_limits<std::uintptr_t>::max)() -
+                             slot * sizeof(void *)) {
+        return false;
+    }
+    const auto methodAddress = vtableAddress + slot * sizeof(void *);
+    void *method = nullptr;
+    if (!mem::ReadValue(reinterpret_cast<const void *>(methodAddress), method) ||
+        method == nullptr || !mem::IsExecutable(method)) {
+        return false;
+    }
+
+    sdk::render::Matrix4x4 worldToView{};
+    sdk::render::Matrix4x4 viewToProjection{};
+    sdk::render::Matrix4x4 worldToPixels{};
+    __try {
+        reinterpret_cast<sdk::render::GetMatricesForViewFn>(method)(
+            renderView, &viewSetup, &worldToView, &viewToProjection,
+            &worldToProjection, &worldToPixels);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        worldToProjection = {};
+        return false;
+    }
+
+    for (const auto &row : worldToProjection.m) {
+        for (const float value : row) {
+            if (!std::isfinite(value)) {
+                worldToProjection = {};
+                return false;
+            }
+        }
+    }
+    return true;
 }
 
 bool TraceLine(const Vector3 &start, const Vector3 &end,

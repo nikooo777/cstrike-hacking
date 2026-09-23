@@ -32,10 +32,13 @@ This is a teaching codebase tied to one Counter-Strike: Source client build. It 
 | Perfect no-spread | `CreateMove` | Replays the verified x64 CS polar cone and applies inverse command-angle compensation; default off because the feature remains build-specific and exploratory. |
 | Silent angles | `CreateMove` return value | Prevents compensated command angles from being copied into the render camera. |
 | Visual no-recoil | `ClientMode::OverrideView` | Subtracts punch from the completed camera view without changing player state. |
+| Bone ESP | `EndScene` | Experimental read-only skeleton lines using the verified studio hierarchy, cached bone matrices, and world-to-screen projection; disabled by default. |
 | ImGui menu | `EndScene` + window procedure + `VGUI_Surface030::LockCursor` | `features/menu.cpp` exposes runtime toggles and is opened with **Insert**; the cursor hook prevents the engine from re-locking the mouse while it is open. |
-| Debug dump | `CreateMove` / **F1** | Prints resolved state plus command, recoil, spread, and one-shot client fire-time diagnostics. |
+| Debug dump | `CreateMove` / **F1** | Prints resolved state plus command, recoil, spread, fire-time, bone-cache, hierarchy, and projection diagnostics. |
 
-The x86 profile retains the legacy triggerbot experiment, while the x64 profile keeps triggerbot disabled and enables the aimbot after validating `IClientNetworkable::IsDormant`. Both profiles keep perfect no-spread off by default. The x64 `C_BaseAnimating::SetupBones` cache fields are reached through the renderable subobject: Ghidra shows `[this + 0xB40]`/`[this + 0xB50]`, which translate to a matrix pointer at `entity + 0xB48` and a count at `entity + 0xB58` from the entity-list pointer. The corrected path has been runtime-validated on the current x64 build (`count=50`, readable and usable); the F1 dump continues to report the raw values and readability flags so future updates can be checked. The menu itself starts closed. MinHook installs `CreateMove`, `ClientMode::OverrideView`, `VGUI_Surface030::LockCursor`, and D3D9 `EndScene`. The window procedure is replaced separately so **Insert** works even when `CreateMove` is not running.
+The x86 profile retains the legacy triggerbot experiment, while the x64 profile keeps triggerbot disabled and enables the aimbot after validating `IClientNetworkable::IsDormant`. Both profiles keep perfect no-spread and Bone ESP off by default. The current Bone ESP path is x64-first: Ghidra verifies `VEngineRenderView014::GetMatricesForView` at slot 50, `VModelInfoClient006::GetStudiomodel` at slot 28, and the entity renderable's `GetModel` at slot 9. It reads dynamic studio parent links and the validated x64 `C_BaseAnimating::SetupBones` cache through the renderable subobject (`entity + 0x8`), then projects matrix positions through the captured view. The x64 cache fields are `[this + 0xB40]`/`[this + 0xB50]` on the renderable, translating to a matrix pointer at `entity + 0xB48` and a count at `entity + 0xB58`; the current build reports `count=50`, readable and usable. The F1 dump reports hierarchy, matrix, and projected-line status so an update can be investigated without guessing. The menu itself starts closed. MinHook installs `CreateMove`, `ClientMode::OverrideView`, `VGUI_Surface030::LockCursor`, and D3D9 `EndScene`. The window procedure is replaced separately so **Insert** works even when `CreateMove` is not running.
+
+The matrix builder consumes the complete x64 `CViewSetup` layout, not just its `angles` field: the overlay is `0xC8` bytes and includes the near/far planes, aspect/off-center flags, and the override matrix through `+0x88`. This is asserted in `sdk/view_setup.h` and is required for valid world-to-screen output.
 
 ### In-game controls
 
@@ -48,7 +51,7 @@ The x86 profile retains the legacy triggerbot experiment, while the x64 profile 
 | **Shift** | Hold for triggerbot when enabled. |
 | **LMB** | Hold for the aimbot when enabled. |
 
-The menu is initialized on the first successful D3D9 `EndScene` call. If it is closed, the hook skips ImGui's `NewFrame` and render work; **Insert** is still handled by the window procedure. While the menu is open, the verified `VGUI_Surface030::LockCursor` hook substitutes `UnlockCursor` and an arrow cursor. The engine then observes the unlocked surface and deactivates first-person mouse recentering through its normal input path. This path has been runtime-validated on x64: the pointer moves freely as soon as the menu opens, without first opening the console or settings.
+The menu and optional bone overlay are initialized on the first successful D3D9 `EndScene` call. Once ImGui is initialized, the hook runs a frame whenever drawing is enabled so Bone ESP can render while the menu is closed; the menu window itself is submitted only while open. **Insert** is still handled by the window procedure. While the menu is open, the verified `VGUI_Surface030::LockCursor` hook substitutes `UnlockCursor` and an arrow cursor. The engine then observes the unlocked surface and deactivates first-person mouse recentering through its normal input path. This path has been runtime-validated on x64: the pointer moves freely as soon as the menu opens, without first opening the console or settings.
 
 ## Runtime flow
 
@@ -65,7 +68,7 @@ DllMain (process attach)
 CreateMove          -> buttons, aim, command recoil/spread composition, F1 debug
 OverrideView        -> read-only visual punch removal from the camera view
 LockCursor          -> preserve an unlocked OS cursor while the menu is open
-EndScene            -> ImGui frame/render when the menu is open
+EndScene            -> optional Bone ESP, then ImGui frame/render
 Window procedure     -> Insert toggle and ImGui input
 END                 -> disable hooks, shut down ImGui, unload the DLL
 ~~~
@@ -78,17 +81,19 @@ Nikooo777/
   core/                    # constants, padding macros, module bases
   config/                  # runtime INI loader
   memory/                  # pattern scanner (ScanModCombo, module size, …)
-  math/                    # Vector3 (POD so it works in overlay unions)
+  math/                    # Vector3 and checked world-to-screen projection
   netvars/                 # runtime ClientClass/RecvTable/RecvProp resolver
   sdk/                     # Source-like types only (no feature logic)
     entity/                # CLocal, CBasePlayer, CCSPlayer
     user_cmd.h, client_*.h, engine_*.h, vgui_surface.h, view_setup.h, create_interface.*
   game/                    # live game access
     entity_list.*          # local player + IClientEntityList access
-    interfaces.*           # interfaces, EngineClient / EngineTrace / ClientMode / ClientState resolve
+    interfaces.*           # interfaces, view matrices, EngineClient / EngineTrace / ClientMode / ClientState resolve
+    model.*                # checked studio-model hierarchy lookup
+    render_state.*         # final OverrideView snapshot for render features
     player.*               # IsAlive, IsEnemy, IsValidTarget, EyePosition
   hooks/                   # MinHook lifecycle + individual hooks + dummy D3D device
-  features/                # gameplay logic + menu + config flags
+  features/                # gameplay logic + menu + Bone ESP + config flags
 imgui/                     # Dear ImGui + DX9 / Win32 backends
 minhook/                   # vendored source, headers, license, and legacy x86 libs
 config/                    # architecture-specific signatures, settings, provenance
@@ -194,12 +199,14 @@ x86 build directory when changing pointer size.
 
 ### Offline deterministic tests
 
-The seed derivation, cone replay, command-layout checks, and inverse-cone math
-are also built as a small architecture-specific test executable. They do not
-load the game, resolve signatures, or call game-owned interfaces:
+Two small architecture-specific test executables cover the pure math.
+`weapon_math_tests` checks the seed derivation, cone replay, command layout, and
+inverse-cone math; `projection_tests` checks the world-to-screen convention used
+by Bone ESP. They do not load the game, resolve signatures, or call game-owned
+interfaces:
 
 ```bat
-cmake --build build-msvc-x64 --target weapon_math_tests
+cmake --build build-msvc-x64 --target weapon_math_tests projection_tests
 ctest --test-dir build-msvc-x64 --output-on-failure
 ```
 
@@ -234,11 +241,12 @@ These are the files to revisit when the client build changes:
 | `sdk/client_entity_list.h` / `game/entity_list.cpp` | Named `VClientEntityList003` interface and player-slot translation. |
 | `sdk/entity/*.h` | Netvar-backed entity accessors plus explicitly client-only fields and the remaining padded layout. |
 | `config/signatures.ini` / `config/signatures-x64.ini` | Architecture-specific patterns, named interfaces, operand decoders, pointer indirections, validation settings, feature defaults, and discovery links. |
-| `game/interfaces.cpp` | `CreateInterface` lookup plus configured entity-list, EngineClient, EngineTrace, ClientState, and ClientMode resolution logic. |
+| `game/interfaces.cpp` | `CreateInterface` lookup plus configured entity-list, render/model interfaces, view-matrix retrieval, EngineClient, EngineTrace, ClientState, and ClientMode resolution logic. |
+| `game/model.cpp` / `math/projection.cpp` | Checked studio parent-link lookup and row-major world-to-screen projection used by the experimental Bone ESP path. |
 | `hooks/hooks.cpp` | Vtable slots for `OverrideView`, `CreateMove`, `VGUI_Surface030::LockCursor`, and `EndScene`. |
 | `core/constants.h` | Entity stride, player limits, team values, and movement flags. |
 
-The debug dump reports module bases, runtime interface/client-only offsets, resolved netvar offsets, the resolved ClientState address, view angles from `VEngineClient`, the local bone-cache pointer/count, aimbot valid/readable/visible target counts, and the local player position when one is available. If a signature or required netvar is not found, or a read produces null/garbage data, treat the binary and the offsets as mismatched and re-dump them rather than guessing.
+The debug dump reports module bases, runtime interface/client-only offsets, resolved netvar offsets, the resolved ClientState address, view angles from `VEngineClient`, the local bone-cache pointer/count, Bone ESP view/matrix/hierarchy/projected-line status, aimbot valid/readable/visible target counts, and the local player position when one is available. If a signature or required netvar is not found, or a read produces null/garbage data, treat the binary and the offsets as mismatched and re-dump them rather than guessing.
 
 ## Tutorial notes
 
@@ -247,6 +255,7 @@ The debug dump reports module bases, runtime interface/client-only offsets, reso
 - [003 - Global addresses, interfaces, and input commands](aidocs/003_global-addresses-and-inputs.md)
 - [004 - x64 migration and ABI](aidocs/004_x64-migration-and-abi.md)
 - [005 - No-spread and weapon accuracy](aidocs/005_no-spread-and-weapon-accuracy.md)
+- [006 - Bone ESP and world-to-screen projection](aidocs/006_bone-esp-and-world-to-screen.md)
 
 The architecture-selected signature profile is the source of truth for the
 runtime signatures and named client/engine interfaces. It intentionally
@@ -280,6 +289,8 @@ provenance fields whenever a new build is reverse-engineered.
 - Rendering support is D3D9-specific and depends on finding the game's visible top-level window.
 - The deterministic seed/spread math has an offline CTest target; signatures, interfaces, timing, and object lifetimes still require an architecture-matched build followed by a permitted local smoke test.
 - Perfect no-spread is validated only for the documented x64 sample path and remains off by default; the x86 cone path and other weapon branches require their own runtime evidence.
+- Bone ESP is an x64-first read-only experiment and remains off by default; the x86 interface slots, studio layout, cache timing, and projection path require their own Ghidra and runtime validation.
+- Bone ESP currently draws valid enemy skeletons from cached matrices but does not yet claim authoritative visibility, interpolation correctness, or resilience across unrelated engine builds.
 - Nothing here is intended to bypass VAC, FaceIT, or any other anti-cheat system.
 
 ## Videos / notes while reversing

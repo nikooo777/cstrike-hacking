@@ -54,6 +54,7 @@ struct FeatureDefaults {
     bool perfectNoSpread = false;
     // Make the CreateMove caller leave the camera alone after cmd mutation.
     bool silentAngles = true;
+    bool boneEsp = false;
     bool menuOpen = false;
 };
 
@@ -70,6 +71,8 @@ struct Config {
     Interface clientEntityList;
     Interface engineClient;
     Interface engineTrace;
+    Interface renderView;
+    Interface modelInfo;
 };
 
 bool Load(HMODULE selfModule, std::string &error);

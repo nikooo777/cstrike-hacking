@@ -377,6 +377,8 @@ bool Load(HMODULE selfModule, std::string &error) {
                           candidate.features.perfectNoSpread, error) ||
         !ReadOptionalBool(ini, "features", "silent_angles", true,
                           candidate.features.silentAngles, error) ||
+        !ReadOptionalBool(ini, "features", "bone_esp", false,
+                          candidate.features.boneEsp, error) ||
         !ReadOptionalBool(ini, "features", "menu_open", false,
                           candidate.features.menuOpen, error) ||
         !ReadSignature(ini, "signature.clientstate", "ClientState",
@@ -399,7 +401,11 @@ bool Load(HMODULE selfModule, std::string &error) {
         !ReadInterface(ini, "interface.engineclient", "EngineClient",
                        candidate.engineClient, error) ||
         !ReadInterface(ini, "interface.enginetrace", "EngineTrace",
-                       candidate.engineTrace, error)) {
+                       candidate.engineTrace, error) ||
+        !ReadInterface(ini, "interface.renderview", "RenderView",
+                       candidate.renderView, error) ||
+        !ReadInterface(ini, "interface.modelinfo", "ModelInfo",
+                       candidate.modelInfo, error)) {
         return false;
     }
 

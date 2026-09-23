@@ -19,7 +19,7 @@ Keep these three layers in agreement:
 | --- | --- |
 | `config/signatures.ini` and `config/signatures-x64.ini` | Architecture-specific patterns, operand decoding, feature defaults, and provenance. |
 | `Nikooo777/` | Resolvers, ABI declarations, checked memory access, hooks, and features. |
-| `aidocs/001` through `aidocs/005` | The evidence-based tutorial narrative: how a value was found and why the implementation uses it. |
+| `aidocs/001` through `aidocs/006` | The evidence-based tutorial narrative: how a value was found and why the implementation uses it. |
 
 The x64 profile is selected by `CMAKE_SIZEOF_VOID_P` in `CMakeLists.txt` and
 copied beside the built DLL as `signatures.ini`. Do not edit only the copied
@@ -38,7 +38,8 @@ The relevant chapters are [001: signatures](aidocs/001_signature-scanning-and-of
 [002: netvars](aidocs/002_netvars-and-entity-offsets.md),
 [003: globals and input](aidocs/003_global-addresses-and-inputs.md),
 [004: x64 migration](aidocs/004_x64-migration-and-abi.md), and
-[005: no-spread / weapon accuracy](aidocs/005_no-spread-and-weapon-accuracy.md).
+[005: no-spread / weapon accuracy](aidocs/005_no-spread-and-weapon-accuracy.md),
+and [006: Bone ESP / world-to-screen](aidocs/006_bone-esp-and-world-to-screen.md).
 Add a new numbered chapter when a reversal becomes a tutorial step; update this
 handoff when the result is a reusable rule for later work.
 
@@ -61,6 +62,13 @@ handoff when the result is a reusable rule for later work.
 5. If Ghidra MCP is available, record the program, address, instruction bytes,
    references, and the relevant register/data-flow observation. A decompiler
    guess without the listing/assembly evidence is not a confirmed reversal.
+6. After a game update, do not start from scratch. The tutorial's Ghidra
+   project (`/source-engine-tutorial/x64`) still holds the original file bytes
+   of the last verified build. Export them from a copy of the project with
+   headless Ghidra, then compare signatures, RTTI-located vtables slot by slot,
+   and documented functions between the two builds. Only the differences need a
+   new reversal. aidocs/004 section 11.1 records this procedure and its
+   2026-09-20 results.
 
 ## x64 ABI gotchas
 
@@ -168,7 +176,7 @@ MOV RCX, [RIP + rel32]       -> decoded global-slot address; often read once
 ```
 
 The current x64 ClientMode pattern is a direct object address and uses
-`indirections=0`. The x64 ClientState initializer likewise resolves the live
+`indirections=0`. The x64 ClientState use-site LEA likewise resolves the live
 object directly. Other builds may use a slot, so always inspect the bytes.
 
 Signature rules:
@@ -187,10 +195,13 @@ Signature rules:
 6. Log the module-relative match offset. It lets the next reversal compare a
    runtime report with Ghidra without confusing ASLR addresses.
 
-The x64 ClientState pattern is deliberately more exact than a generic C++
-initializer because the short wildcarded form matched many functions. That is
-an acceptable build-specific trade-off when the uniqueness check and the
-re-dump procedure are documented.
+Avoid keeping call or jump displacements exact to make a pattern unique. The
+first x64 ClientState pattern did that on a generic C++ static initializer,
+and it broke on the 2026-09-20 update because both displacements moved. The
+current pattern anchors on a use site (`LEA RCX,[cl]`, a call, and a compare of
+the signon state with `6`) with every displacement wildcarded, and it
+cross-checks with the object the `CClientState` constructor receives
+(aidocs/004 section 5.1).
 
 ## Finding interfaces and methods
 
@@ -222,6 +233,9 @@ Slots currently verified for the sample x64 build, counting from zero:
 | `EngineTraceClient003` | `TraceRay` | 4 |
 | `IClientUnknown` | `GetClientNetworkable` | 4 |
 | `IClientNetworkable` | `IsDormant` | 8 |
+| `IClientRenderable` | `GetModel` | 9 |
+| `VEngineRenderView014` | `GetMatricesForView` | 50 |
+| `VModelInfoClient006` | `GetStudiomodel` | 28 |
 | `VGUI_Surface030` | `SetCursor` | 51 |
 | `VGUI_Surface030` | `UnlockCursor` / `LockCursor` | 61 / 62 |
 | `VGUI_Surface030` | `CalculateMouseVisible` / `IsCursorLocked` | 93 / 104 |
@@ -414,7 +428,10 @@ Do not start by searching for an old “no spread offset”. Verified anchors
   separate id passed to the fire call;
   one validated capture reported fire id 27, info index 46, predicted/actual
   inaccuracy `0.0282658`, matching fire angles, and matching cone offsets;
-  branch-2 `GetInaccuracy` also adds a post-movement speed term from
+  the accuracy "branch" is the replicated `weapon_accuracy_model` ConVar
+  (default 2; value 1 is unmodeled and fails closed), read by
+  `game::ReadAccuracyModel` from the getter prologue;
+  the default-model `GetInaccuracy` also adds a post-movement speed term from
   absolute velocity `player+0x1A8/+0x1AC`, remapped across 34%-95% of weapon
   speed and scaled by weapon-info `+0x914+mode*4`;
   paired stationary/moving captures showed the movement term matching at
@@ -484,6 +501,8 @@ Before drawing entities, reverse and validate:
 - a world-to-screen matrix or named engine camera/view interface;
 - matrix row/column order, coordinate convention, clip-space `w`, and viewport
   dimensions/scaling;
+- the complete `CViewSetup` layout consumed by the matrix builder, not just the
+  `angles` field used by a camera hook;
 - a render lifecycle where bone data and camera data are coherent.
 
 Prefer a discovered engine/view interface or matrix reference over a guessed
@@ -502,6 +521,39 @@ reset/lost-device behavior, and restore the window procedure during unload.
 If a render-stage hook is used to refresh bones, confirm its stage timing in
 Ghidra/runtime rather than assuming `CreateMove` and `EndScene` observe the
 same entity state.
+
+The current x64 `CViewSetup` overlay is `0xC8` bytes. Ghidra's
+`FUN_1800D5580` reads fields through `+0x86` and the view-to-projection
+override matrix at `+0x88`; an overlay that stops at `angles` (`+0x4C`) is
+valid for visual punch removal but invalid for matrix construction. Keep size
+and offset assertions beside any future view setup declaration.
+
+### Current bone ESP evidence
+
+The current read-only Bone ESP implementation is disabled by default and is
+documented in [aidocs/006](aidocs/006_bone-esp-and-world-to-screen.md). The
+x64 engine evidence is:
+
+- `VEngineRenderView014` registration at `engine.dll+0x9280`, object global
+  `engine.dll+0x4713D8`, vtable `engine.dll+0x3932E0`, slot 50 at
+  `engine.dll+0x12EBE0`;
+- `VModelInfoClient006` registration at `engine.dll+0x10560`, object global
+  `engine.dll+0x47AF30`, vtable `engine.dll+0x3AE7C8`, slot 28 at
+  `engine.dll+0x1CAFC0`;
+- the entity's renderable subobject is `entity + 0x8`, and `GetModel` is slot
+  9 on that subobject.
+
+The model chain is `entity -> entity + 0x8 -> GetModel -> GetStudiomodel`.
+The studio header supplies dynamic parent links; it is not replaced with a
+fixed bone list. The cached matrix/count accesses are renderable-relative
+`+0xB40`/`+0xB50`, which become entity-relative `+0xB48`/`+0xB58`. The final
+`CViewSetup` is captured after `OverrideView` calls its original function, and
+`EndScene` obtains a checked world-to-projection matrix before drawing.
+
+The F1 line must distinguish `view`, `matrix`, `candidates`, `hierarchies`,
+and `projectedLines`. If a stage fails, collect the missing Ghidra or runtime
+evidence instead of trying a nearby slot, offset, matrix convention, or bone
+index. The x86 path compiles but is not yet validated for these interfaces.
 
 ### CreateMove is not the final camera write
 

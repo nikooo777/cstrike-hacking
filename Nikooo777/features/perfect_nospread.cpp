@@ -2,6 +2,7 @@
 
 #include <cmath>
 
+#include "core/arch.h"
 #include "core/constants.h"
 #include "features/config.h"
 #include "features/norecoil.h"
@@ -14,41 +15,31 @@
 
 namespace features {
 
-namespace {
-
-ShotAngleTrace g_lastShotAngleTrace{};
-
-} // namespace
-
-const ShotAngleTrace &GetLastShotAngleTrace() {
-    return g_lastShotAngleTrace;
-}
-
-void ApplyAimAndFireCorrections(CUserCmd *userCmd,
-                                const Vector3 &inputAngles,
-                                const Vector3 &desiredAimAngles,
-                                bool aimbotApplied) {
-    g_lastShotAngleTrace = {};
-    g_lastShotAngleTrace.inputAngles = inputAngles;
-    g_lastShotAngleTrace.desiredAngles = desiredAimAngles;
-    g_lastShotAngleTrace.aimbotApplied = aimbotApplied;
+ShotAngleTrace ApplyAimAndFireCorrections(CUserCmd *userCmd,
+                                          const Vector3 &inputAngles,
+                                          const Vector3 &desiredAimAngles,
+                                          bool aimbotApplied) {
+    ShotAngleTrace trace{};
+    trace.inputAngles = inputAngles;
+    trace.desiredAngles = desiredAimAngles;
+    trace.aimbotApplied = aimbotApplied;
 
     if (userCmd == nullptr) {
-        return;
+        return trace;
     }
 
     // Aimbot is the first writer; if a later stage cannot read its state,
     // preserving its selected angle is safer than reverting to the camera.
     userCmd->viewangles = desiredAimAngles;
-    g_lastShotAngleTrace.commandAngles = desiredAimAngles;
-    g_lastShotAngleTrace.fireBaseAngles = desiredAimAngles;
-    g_lastShotAngleTrace.spreadAngles = desiredAimAngles;
+    trace.commandAngles = desiredAimAngles;
+    trace.fireBaseAngles = desiredAimAngles;
+    trace.spreadAngles = desiredAimAngles;
 
     const auto &config = GetConfig();
-    g_lastShotAngleTrace.attack = (userCmd->buttons & IN_ATTACK) != 0;
-    g_lastShotAngleTrace.noRecoilRequested = config.norecoil;
-    g_lastShotAngleTrace.noSpreadRequested =
-        config.perfectNoSpread && g_lastShotAngleTrace.attack;
+    trace.attack = (userCmd->buttons & IN_ATTACK) != 0;
+    trace.noRecoilRequested = config.norecoil;
+    trace.noSpreadRequested =
+        config.perfectNoSpread && trace.attack;
 
     auto *local = game::GetLocalPlayer();
     RecoilState recoilState{};
@@ -57,44 +48,44 @@ void ApplyAimAndFireCorrections(CUserCmd *userCmd,
     }
     Vector3 firePunch = recoilState.punchAngles;
     float intervalPerTick = 0.0f;
-#if defined(_WIN64) || defined(_M_X64) || defined(__x86_64__)
+#if ARCH_X64()
     if (recoilState.punchReadable &&
         game::GetIntervalPerTick(intervalPerTick) &&
         game::PredictCssPunchDecay(recoilState.punchAngles, intervalPerTick,
                                    firePunch)) {
-        g_lastShotAngleTrace.firePunchPredicted = true;
+        trace.firePunchPredicted = true;
     }
 #endif
-    g_lastShotAngleTrace.currentPunchAngles = recoilState.punchAngles;
-    g_lastShotAngleTrace.punchAngles = firePunch;
-    g_lastShotAngleTrace.intervalPerTick = intervalPerTick;
-    g_lastShotAngleTrace.recoilStateReadable = recoilState.punchReadable;
+    trace.currentPunchAngles = recoilState.punchAngles;
+    trace.punchAngles = firePunch;
+    trace.intervalPerTick = intervalPerTick;
+    trace.recoilStateReadable = recoilState.punchReadable;
 
     game::ShotAngleRequest request{};
     request.desiredAngles = desiredAimAngles;
     request.punchAngles = firePunch;
     request.punchReadable = recoilState.punchReadable;
     request.noRecoil = config.norecoil;
-    request.noSpread = g_lastShotAngleTrace.noSpreadRequested;
+    request.noSpread = trace.noSpreadRequested;
 
-    if (g_lastShotAngleTrace.noSpreadRequested && local != nullptr) {
+    if (trace.noSpreadRequested && local != nullptr) {
         game::WeaponSpreadState spreadState{};
         const bool spreadRead = game::ReadWeaponSpreadState(local, spreadState);
         if (spreadRead) {
-            g_lastShotAngleTrace.currentInaccuracy = spreadState.inaccuracy;
-            g_lastShotAngleTrace.fireInaccuracy =
+            trace.currentInaccuracy = spreadState.inaccuracy;
+            trace.fireInaccuracy =
                 spreadState.fireInaccuracy;
-            g_lastShotAngleTrace.spreadRadius = spreadState.spread;
-            g_lastShotAngleTrace.accuracyPenalty =
+            trace.spreadRadius = spreadState.spread;
+            trace.accuracyPenalty =
                 spreadState.accuracyPenalty;
-            g_lastShotAngleTrace.fireAccuracyPenalty =
+            trace.fireAccuracyPenalty =
                 spreadState.fireAccuracyPenalty;
-            g_lastShotAngleTrace.shotsFired = spreadState.shotsFired;
-            g_lastShotAngleTrace.fireAccuracyAvailable =
+            trace.shotsFired = spreadState.shotsFired;
+            trace.fireAccuracyAvailable =
                 spreadState.fireInaccuracyOk;
         }
         if (spreadRead && spreadState.usableForCompensation) {
-            g_lastShotAngleTrace.spreadStateUsable = true;
+            trace.spreadStateUsable = true;
 
             std::uint32_t randomSeed = 0;
             bool fromStoredSeed = false;
@@ -110,10 +101,10 @@ void ApplyAimAndFireCorrections(CUserCmd *userCmd,
                     request.spreadAvailable = true;
                     request.spreadX = cone.sx;
                     request.spreadY = cone.sy;
-                    g_lastShotAngleTrace.seed = randomSeed;
-                    g_lastShotAngleTrace.seedUsable = true;
-                    g_lastShotAngleTrace.spreadX = cone.sx;
-                    g_lastShotAngleTrace.spreadY = cone.sy;
+                    trace.seed = randomSeed;
+                    trace.seedUsable = true;
+                    trace.spreadX = cone.sx;
+                    trace.spreadY = cone.sy;
                 }
             }
         }
@@ -122,15 +113,15 @@ void ApplyAimAndFireCorrections(CUserCmd *userCmd,
     game::ShotAngleResult result{};
     if (game::ComposeShotAngles(request, result) && result.ok) {
         userCmd->viewangles = result.commandAngles;
-        g_lastShotAngleTrace.fireBaseAngles = result.fireBaseAngles;
-        g_lastShotAngleTrace.spreadAngles = result.spreadAngles;
-        g_lastShotAngleTrace.commandAngles = result.commandAngles;
-        g_lastShotAngleTrace.spreadResidualDeg = result.spreadResidualDeg;
-        g_lastShotAngleTrace.spreadIterations = result.spreadIterations;
-        g_lastShotAngleTrace.noRecoilApplied = result.noRecoilApplied;
-        g_lastShotAngleTrace.noSpreadApplied = result.noSpreadApplied;
+        trace.fireBaseAngles = result.fireBaseAngles;
+        trace.spreadAngles = result.spreadAngles;
+        trace.commandAngles = result.commandAngles;
+        trace.spreadResidualDeg = result.spreadResidualDeg;
+        trace.spreadIterations = result.spreadIterations;
+        trace.noRecoilApplied = result.noRecoilApplied;
+        trace.noSpreadApplied = result.noSpreadApplied;
     }
-
+    return trace;
 }
 
 bool CommandAnglesChanged(const CUserCmd *userCmd,

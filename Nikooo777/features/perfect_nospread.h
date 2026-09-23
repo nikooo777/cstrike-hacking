@@ -8,8 +8,7 @@ class CUserCmd;
 
 namespace features {
 
-// One diagnostic snapshot of the shared aim/recoil/spread composition for the
-// most recent CreateMove call on the game thread.
+// Result and diagnostic snapshot of one shared aim/recoil/spread composition.
 struct ShotAngleTrace {
     Vector3 inputAngles{};
     Vector3 desiredAngles{};
@@ -47,12 +46,10 @@ struct ShotAngleTrace {
 // command/camera intent; `desiredAimAngles` is that intent after target
 // selection. Recoil and spread are then applied in fire space according to
 // the runtime feature configuration.
-void ApplyAimAndFireCorrections(CUserCmd *userCmd,
-                                const Vector3 &inputAngles,
-                                const Vector3 &desiredAimAngles,
-                                bool aimbotApplied);
-
-const ShotAngleTrace &GetLastShotAngleTrace();
+ShotAngleTrace ApplyAimAndFireCorrections(CUserCmd *userCmd,
+                                          const Vector3 &inputAngles,
+                                          const Vector3 &desiredAimAngles,
+                                          bool aimbotApplied);
 
 bool CommandAnglesChanged(const CUserCmd *userCmd,
                           const Vector3 &intendedCamera);

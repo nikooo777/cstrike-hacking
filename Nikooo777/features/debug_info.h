@@ -1,18 +1,14 @@
 #pragma once
 
 class CUserCmd;
-class Vector3;
 
 namespace features {
 
-// One-shot F1 dump. When cmd is non-null, also prints seed/cmd-vs-engine angles.
-void PrintDebugInfo(const CUserCmd *userCmd = nullptr);
-void ArmClientFireDiagnostic();
-void CaptureClientFireCommand(const CUserCmd *userCmd);
-void RecordClientFireBullets(int playerIndex, const Vector3 *origin,
-                             const Vector3 *fireAngles, int weaponId,
-                             int mode, int seed, float inaccuracy,
-                             float spread, float soundTime);
-void RecordAccuracyPenaltyUpdate(void *weapon, bool beforeCall);
+struct ShotAngleTrace;
+
+// One-shot F1 dump. With a command it also prints the weapon, seed, and angle
+// state for that tick, plus the shot pipeline when its trace is supplied.
+void PrintDebugInfo(const CUserCmd *userCmd = nullptr,
+                    const ShotAngleTrace *shotTrace = nullptr);
 
 } // namespace features

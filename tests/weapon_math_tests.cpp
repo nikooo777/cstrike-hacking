@@ -120,6 +120,45 @@ void TestPreFireStateDecay() {
         punch, std::numeric_limits<float>::quiet_NaN(), decayed));
 }
 
+void TestPenaltyDecayRule() {
+    using game::PenaltyBaseline;
+    using game::PenaltyRecovery;
+
+    CHECK(game::kGroundPenaltyDecay == -2.3025851f);
+    CHECK(game::kAirbornePenaltyDecay == -0.7675284f);
+
+    struct Row {
+        bool ladder;
+        bool onGround;
+        bool ducking;
+        PenaltyBaseline baseline;
+        PenaltyRecovery recovery;
+        float decayConstant;
+    };
+    // aidocs/005 section 5.6, one row per movement state.
+    const Row rows[] = {
+        {true, true, false, PenaltyBaseline::StandPlusLadder,
+         PenaltyRecovery::Stand, game::kGroundPenaltyDecay},
+        {true, false, true, PenaltyBaseline::StandPlusLadder,
+         PenaltyRecovery::Stand, game::kGroundPenaltyDecay},
+        {false, true, true, PenaltyBaseline::Crouch, PenaltyRecovery::Crouch,
+         game::kGroundPenaltyDecay},
+        {false, true, false, PenaltyBaseline::Stand, PenaltyRecovery::Stand,
+         game::kGroundPenaltyDecay},
+        {false, false, false, PenaltyBaseline::Stand, PenaltyRecovery::Crouch,
+         game::kAirbornePenaltyDecay},
+        {false, false, true, PenaltyBaseline::Crouch, PenaltyRecovery::Crouch,
+         game::kAirbornePenaltyDecay},
+    };
+    for (const auto &row : rows) {
+        const auto rule =
+            game::SelectPenaltyDecayRule(row.ladder, row.onGround, row.ducking);
+        CHECK(rule.baseline == row.baseline);
+        CHECK(rule.recovery == row.recovery);
+        CHECK(rule.decayConstant == row.decayConstant);
+    }
+}
+
 void TestUserCmdLayout() {
     CUserCmd command{};
     const std::size_t pointerSize = sizeof(void *);
@@ -285,6 +324,7 @@ int main() {
     TestCommandSeedResolution();
     TestNextAccuracyPenalty();
     TestPreFireStateDecay();
+    TestPenaltyDecayRule();
     TestUserCmdLayout();
     TestConeDeterminismAndValidation();
     TestCompensation();

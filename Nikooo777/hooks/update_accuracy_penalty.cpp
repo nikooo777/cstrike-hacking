@@ -1,10 +1,11 @@
 #include "hooks/hooks.h"
 
-#include "features/debug_info.h"
+#include "core/arch.h"
+#include "features/fire_capture.h"
 
 namespace hooks {
 
-#if !defined(_M_IX86) && !defined(__i386__)
+#if ARCH_X64()
 void hkUpdateAccuracyPenalty(void *weapon) {
     features::RecordAccuracyPenaltyUpdate(weapon, true);
     originalUpdateAccuracyPenalty(weapon);

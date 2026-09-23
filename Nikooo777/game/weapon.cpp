@@ -4,24 +4,31 @@
 
 #include <cmath>
 #include <cstring>
-#include <limits>
 
+#include "core/arch.h"
 #include "config/config.h"
 #include "core/constants.h"
 #include "game/interfaces.h"
 #include "game/timing.h"
 #include "memory/mem.h"
 #include "netvars/netvars.h"
+#include "sdk/client_offsets.h"
 #include "sdk/entity/c_cs_player.h"
 
 namespace game {
 
 namespace {
 
+namespace offsets = sdk::offsets;
+namespace weapon_info = sdk::offsets::weapon_info;
+#if ARCH_X64()
+namespace accuracy_model = sdk::offsets::accuracy_model;
+#endif
+
 // C_WeaponCSBase vtable slots verified on x86 and x64 (aidocs/005).
-constexpr int kGetInaccuracySlot = 382;
-constexpr int kGetSpreadSlot = 383;
-constexpr int kGetWeaponIdSlot = 371;
+constexpr std::size_t kGetInaccuracySlot = 382;
+constexpr std::size_t kGetSpreadSlot = 383;
+constexpr std::size_t kGetWeaponIdSlot = 371;
 
 // Soft bounds for CSS-style accuracy floats (reject garbage, not exact maxes).
 constexpr float kMaxPlausibleCone = 5.0f;
@@ -29,109 +36,43 @@ constexpr float kMaxPlausiblePenalty = 10.0f;
 constexpr int kMaxPlausibleClip = 255;
 constexpr int kMaxPlausibleShots = 255;
 
-#if defined(_M_IX86) || defined(__i386__)
-constexpr std::size_t kAccuracyQuadraticOffset = 0x89c;
-constexpr std::size_t kAccuracyDivisorOffset = 0x8a0;
-constexpr std::size_t kAccuracyOffset = 0x8a4;
-constexpr std::size_t kAccuracyMaxOffset = 0x8a8;
-#else
-constexpr std::size_t kAccuracyQuadraticOffset = 0x8cc;
-constexpr std::size_t kAccuracyDivisorOffset = 0x8d0;
-constexpr std::size_t kAccuracyOffset = 0x8d4;
-constexpr std::size_t kAccuracyMaxOffset = 0x8d8;
-#endif
-
-#if defined(_WIN64) || defined(_M_X64) || defined(__x86_64__)
-constexpr std::size_t kAccuracyStateOffset = 0xca8;
-constexpr std::size_t kWeaponInfoIndexOffset = 0xc62;
-constexpr std::size_t kAccuracyModelLoadOffset = 0x6;
-constexpr std::uint8_t kAccuracyModelLoad[] = {0x48, 0x8b, 0x05};
-constexpr std::size_t kAccuracyModelLoadDisplacement = 0x3;
-constexpr std::size_t kAccuracyModelLoadLength = 0x7;
-constexpr std::size_t kAccuracyModelCompareOffset = 0x10;
-constexpr std::uint8_t kAccuracyModelCompare[] = {0x83, 0x78, 0x58, 0x01};
-constexpr std::size_t kConVarIntValueOffset = 0x58;
+#if ARCH_X64()
 constexpr int kUnmodeledAccuracyModel = 1;
-constexpr std::size_t kMoveTypeOffset = 0x1f4;
-constexpr std::size_t kAccuracyModifierOffset = 0xbf4;
-constexpr std::size_t kCrouchInaccuracyOffset = 0x8e4;
-constexpr std::size_t kStandingInaccuracyOffset = 0x8ec;
-constexpr std::size_t kLadderInaccuracyOffset = 0x904;
-constexpr std::size_t kStandingRecoveryOffset = 0x91c;
-constexpr std::size_t kCrouchRecoveryOffset = 0x920;
-constexpr std::size_t kAccuracyModifierInfoOffset = 0x924;
 constexpr std::uint8_t kMoveTypeLadder = 9;
-constexpr float kAirborneDecayConstant = -0.7675284f;
-constexpr float kGroundDecayConstant = -2.3025851f;
 #endif
 
-#if defined(_M_IX86) || defined(__i386__)
-using WeaponFloatFn = float(__thiscall *)(void *thisPtr);
-using WeaponIdFn = int(__thiscall *)(void *thisPtr);
+using WeaponFloatFn = float(ARCH_THISCALL *)(void *thisPtr);
+using WeaponIdFn = int(ARCH_THISCALL *)(void *thisPtr);
 using WeaponInfoLookupFn = void *(__cdecl *)(std::uint16_t weaponId);
-#else
-using WeaponFloatFn = float (*)(void *thisPtr);
-using WeaponIdFn = int (*)(void *thisPtr);
-using WeaponInfoLookupFn = void *(*)(std::uint16_t weaponId);
-#endif
 
-bool ReadWeaponMethod(WeaponEntity weapon, int slot, void *&method) {
-    method = nullptr;
-    if (weapon == nullptr) {
-        return false;
-    }
-
-    auto *vtable = mem::ReadPointer<void>(weapon);
-    if (vtable == nullptr) {
-        return false;
-    }
-
-    const auto vtableAddress = reinterpret_cast<std::uintptr_t>(vtable);
-    const auto index = static_cast<std::size_t>(slot);
-    if (index > ((std::numeric_limits<std::uintptr_t>::max)() -
-                 vtableAddress) / sizeof(void *)) {
-        return false;
-    }
-
-    const auto methodAddress = vtableAddress + index * sizeof(void *);
-    if (!mem::ReadValue(reinterpret_cast<const void *>(methodAddress),
-                        method) ||
-        method == nullptr || !mem::IsExecutable(method)) {
-        return false;
-    }
-
-    return true;
-}
-
-#if defined(_WIN64) || defined(_M_X64) || defined(__x86_64__)
+#if ARCH_X64()
 bool ReadAccuracyModel(WeaponEntity weapon, WeaponSpreadState &state) {
     void *method = nullptr;
-    if (!ReadWeaponMethod(weapon, kGetInaccuracySlot, method)) {
+    if (!mem::ReadVirtual(weapon, kGetInaccuracySlot, method)) {
         return false;
     }
 
-    std::uint8_t prologue[kAccuracyModelCompareOffset +
-                          sizeof(kAccuracyModelCompare)]{};
+    std::uint8_t prologue[accuracy_model::kCompareOffset +
+                          sizeof(accuracy_model::kCompare)]{};
     if (!mem::ReadBytes(method, prologue, sizeof(prologue)) ||
-        std::memcmp(prologue + kAccuracyModelLoadOffset, kAccuracyModelLoad,
-                    sizeof(kAccuracyModelLoad)) != 0 ||
-        std::memcmp(prologue + kAccuracyModelCompareOffset,
-                    kAccuracyModelCompare,
-                    sizeof(kAccuracyModelCompare)) != 0) {
+        std::memcmp(prologue + accuracy_model::kLoadOffset, accuracy_model::kLoad,
+                    sizeof(accuracy_model::kLoad)) != 0 ||
+        std::memcmp(prologue + accuracy_model::kCompareOffset,
+                    accuracy_model::kCompare,
+                    sizeof(accuracy_model::kCompare)) != 0) {
         return false;
     }
 
     const auto methodAddress = reinterpret_cast<std::uintptr_t>(method);
-    if (methodAddress > (std::numeric_limits<std::uintptr_t>::max)() -
-                            kAccuracyModelLoadOffset) {
+    if (!mem::AddDoesNotOverflow(methodAddress, accuracy_model::kLoadOffset)) {
         return false;
     }
 
     std::uintptr_t parentSlot = 0;
     if (!mem::DecodeRipRelative32(
             reinterpret_cast<const void *>(methodAddress +
-                                           kAccuracyModelLoadOffset),
-            kAccuracyModelLoadDisplacement, 0, kAccuracyModelLoadLength,
+                                           accuracy_model::kLoadOffset),
+            accuracy_model::kLoadDisplacement, 0, accuracy_model::kLoadLength,
             parentSlot)) {
         return false;
     }
@@ -139,14 +80,13 @@ bool ReadAccuracyModel(WeaponEntity weapon, WeaponSpreadState &state) {
     std::uintptr_t conVar = 0;
     if (!mem::ReadValue(reinterpret_cast<const void *>(parentSlot), conVar) ||
         conVar == 0 ||
-        conVar > (std::numeric_limits<std::uintptr_t>::max)() -
-                     kConVarIntValueOffset) {
+        !mem::AddDoesNotOverflow(conVar, accuracy_model::kConVarIntValue)) {
         return false;
     }
 
     int model = -1;
     if (!mem::ReadValue(
-            reinterpret_cast<const void *>(conVar + kConVarIntValueOffset),
+            reinterpret_cast<const void *>(conVar + accuracy_model::kConVarIntValue),
             model)) {
         return false;
     }
@@ -163,10 +103,10 @@ bool ReadAccuracyModel(WeaponEntity, WeaponSpreadState &) {
 }
 #endif
 
-bool CallWeaponFloat(WeaponEntity weapon, int slot, float &out) {
+bool CallWeaponFloat(WeaponEntity weapon, std::size_t slot, float &out) {
     out = 0.0f;
     void *method = nullptr;
-    if (!ReadWeaponMethod(weapon, slot, method)) {
+    if (!mem::ReadVirtual(weapon, slot, method)) {
         return false;
     }
 
@@ -210,7 +150,7 @@ void *LookupWeaponInfo(int weaponId) {
     }
     if (info == nullptr ||
         !mem::IsReadable(reinterpret_cast<const char *>(info) +
-                             kAccuracyMaxOffset,
+                             weapon_info::kMaxInaccuracy,
                          sizeof(float))) {
         return nullptr;
     }
@@ -271,7 +211,7 @@ bool PlausibleShots(int shots) {
     return shots >= 0 && shots <= kMaxPlausibleShots;
 }
 
-#if defined(_WIN64) || defined(_M_X64) || defined(__x86_64__)
+#if ARCH_X64()
 bool PredictPreFireAccuracy(const CCSPlayer *player, void *weaponInfo,
                             WeaponSpreadState &state) {
     if (player == nullptr || weaponInfo == nullptr ||
@@ -286,64 +226,45 @@ bool PredictPreFireAccuracy(const CCSPlayer *player, void *weaponInfo,
     int flags = 0;
     const auto *playerBytes = reinterpret_cast<const char *>(player);
     const auto *weaponBytes = reinterpret_cast<const char *>(state.weapon);
-    if (!mem::ReadValue(playerBytes + kMoveTypeOffset, moveType) ||
-        !mem::ReadValue(weaponBytes + kAccuracyModifierOffset,
+    if (!mem::ReadValue(playerBytes + offsets::kMoveType, moveType) ||
+        !mem::ReadValue(weaponBytes + offsets::kWeaponAccuracyModifier,
                         accuracyModifier) ||
         !ReadNetvarInt(player, "DT_BasePlayer", "m_fFlags", flags)) {
         return false;
     }
 
+    const auto rule = SelectPenaltyDecayRule(moveType == kMoveTypeLadder,
+                                             (flags & FL_ONGROUND) != 0,
+                                             (flags & FL_DUCKING) != 0);
     const auto modeOffset = static_cast<std::size_t>(state.mode) *
                             sizeof(float);
+    const auto baselineOffset = rule.baseline == PenaltyBaseline::Crouch
+                                    ? weapon_info::kCrouchInaccuracy
+                                    : weapon_info::kStandInaccuracy;
+    const auto recoveryOffset = rule.recovery == PenaltyRecovery::Crouch
+                                    ? weapon_info::kCrouchRecovery
+                                    : weapon_info::kStandRecovery;
     float baseline = 0.0f;
     float recoveryTime = 0.0f;
-    float decayConstant = kGroundDecayConstant;
-    if (moveType == kMoveTypeLadder) {
+    if (!ReadWeaponInfoFloat(weaponInfo, baselineOffset + modeOffset,
+                             baseline) ||
+        !ReadWeaponInfoFloat(weaponInfo, recoveryOffset, recoveryTime)) {
+        return false;
+    }
+    if (rule.baseline == PenaltyBaseline::StandPlusLadder) {
         float ladder = 0.0f;
-        if (!ReadWeaponInfoFloat(
-                weaponInfo, kStandingInaccuracyOffset + modeOffset,
-                baseline) ||
-            !ReadWeaponInfoFloat(
-                weaponInfo, kLadderInaccuracyOffset + modeOffset, ladder) ||
-            !ReadWeaponInfoFloat(weaponInfo, kStandingRecoveryOffset,
-                                 recoveryTime)) {
+        if (!ReadWeaponInfoFloat(weaponInfo,
+                                 weapon_info::kLadderInaccuracy + modeOffset,
+                                 ladder)) {
             return false;
         }
         baseline += ladder;
-    } else if ((flags & FL_DUCKING) != 0) {
-        if (!ReadWeaponInfoFloat(
-                weaponInfo, kCrouchInaccuracyOffset + modeOffset,
-                baseline)) {
-            return false;
-        }
-    } else if (!ReadWeaponInfoFloat(
-                   weaponInfo, kStandingInaccuracyOffset + modeOffset,
-                   baseline)) {
-        return false;
-    }
-
-    if (moveType != kMoveTypeLadder && (flags & FL_ONGROUND) == 0) {
-        decayConstant = kAirborneDecayConstant;
-        if (!ReadWeaponInfoFloat(weaponInfo, kCrouchRecoveryOffset,
-                                 recoveryTime)) {
-            return false;
-        }
-    } else if (moveType != kMoveTypeLadder &&
-               (flags & FL_DUCKING) != 0) {
-        if (!ReadWeaponInfoFloat(weaponInfo, kCrouchRecoveryOffset,
-                                 recoveryTime)) {
-            return false;
-        }
-    } else if (moveType != kMoveTypeLadder &&
-               !ReadWeaponInfoFloat(weaponInfo, kStandingRecoveryOffset,
-                                    recoveryTime)) {
-        return false;
     }
 
     if (accuracyModifier != 0) {
         float extraBaseline = 0.0f;
         if (!ReadWeaponInfoFloat(weaponInfo,
-                                 kAccuracyModifierInfoOffset,
+                                 weapon_info::kAccuracyModifierBaseline,
                                  extraBaseline)) {
             return false;
         }
@@ -355,7 +276,7 @@ bool PredictPreFireAccuracy(const CCSPlayer *player, void *weaponInfo,
     if (!GetIntervalPerTick(interval) ||
         !PredictAccuracyPenaltyDecay(
             state.accuracyPenalty, baseline, recoveryTime, interval,
-            decayConstant, nextPenalty)) {
+            rule.decayConstant, nextPenalty)) {
         return false;
     }
 
@@ -441,11 +362,11 @@ bool GetWeaponSpread(WeaponEntity weapon, float &out) {
     return CallWeaponFloat(weapon, kGetSpreadSlot, out);
 }
 
-bool GetWeaponMethodAddress(WeaponEntity weapon, int slot,
+bool GetWeaponMethodAddress(WeaponEntity weapon, std::size_t slot,
                             std::uintptr_t &address) {
     address = 0;
     void *method = nullptr;
-    if (!ReadWeaponMethod(weapon, slot, method)) {
+    if (!mem::ReadVirtual(weapon, slot, method)) {
         return false;
     }
 
@@ -456,7 +377,7 @@ bool GetWeaponMethodAddress(WeaponEntity weapon, int slot,
 bool GetWeaponId(WeaponEntity weapon, int &out) {
     out = -1;
     void *method = nullptr;
-    if (!ReadWeaponMethod(weapon, kGetWeaponIdSlot, method)) {
+    if (!mem::ReadVirtual(weapon, kGetWeaponIdSlot, method)) {
         return false;
     }
 
@@ -489,14 +410,13 @@ bool ReadWeaponSpreadState(const CCSPlayer *player, WeaponSpreadState &state) {
                            state.inaccuracyMethod);
     GetWeaponMethodAddress(state.weapon, kGetSpreadSlot, state.spreadMethod);
     ReadAccuracyModel(state.weapon, state);
-#if defined(_WIN64) || defined(_M_X64) || defined(__x86_64__)
+#if ARCH_X64()
     if (state.accuracyModelOk) {
         const auto weaponAddress = reinterpret_cast<std::uintptr_t>(state.weapon);
-        if (weaponAddress <= (std::numeric_limits<std::uintptr_t>::max)() -
-                                 kAccuracyStateOffset) {
+        if (mem::AddDoesNotOverflow(weaponAddress, offsets::kWeaponAccuracyState)) {
             state.accuracyStateOk = mem::ReadValue(
                 reinterpret_cast<const void *>(weaponAddress +
-                                               kAccuracyStateOffset),
+                                               offsets::kWeaponAccuracyState),
                 state.accuracyState);
             state.accuracyStateOk =
                 state.accuracyStateOk && PlausiblePenalty(state.accuracyState);
@@ -506,10 +426,10 @@ bool ReadWeaponSpreadState(const CCSPlayer *player, WeaponSpreadState &state) {
 
     state.weaponIdOk = GetWeaponId(state.weapon, state.weaponId);
 
-#if defined(_WIN64) || defined(_M_X64) || defined(__x86_64__)
+#if ARCH_X64()
     state.weaponInfoIndexOk = mem::ReadValue(
         reinterpret_cast<const char *>(state.weapon) +
-            kWeaponInfoIndexOffset,
+            offsets::kWeaponInfoIndex,
         state.weaponInfoIndex);
 #else
     if (state.weaponIdOk) {
@@ -566,11 +486,11 @@ bool ReadWeaponSpreadState(const CCSPlayer *player, WeaponSpreadState &state) {
         float offset = 0.0f;
         float maximum = 0.0f;
         std::uint8_t quadraticByte = 0;
-        if (ReadWeaponInfoByte(weaponInfo, kAccuracyQuadraticOffset,
+        if (ReadWeaponInfoByte(weaponInfo, weapon_info::kAccuracyQuadratic,
                                quadraticByte) &&
-            ReadWeaponInfoFloat(weaponInfo, kAccuracyDivisorOffset, divisor) &&
-            ReadWeaponInfoFloat(weaponInfo, kAccuracyOffset, offset) &&
-            ReadWeaponInfoFloat(weaponInfo, kAccuracyMaxOffset, maximum) &&
+            ReadWeaponInfoFloat(weaponInfo, weapon_info::kAccuracyDivisor, divisor) &&
+            ReadWeaponInfoFloat(weaponInfo, weapon_info::kAccuracyOffset, offset) &&
+            ReadWeaponInfoFloat(weaponInfo, weapon_info::kMaxInaccuracy, maximum) &&
             PredictNextAccuracyPenalty(
                 state.shotsFired, divisor, quadraticByte != 0, offset,
                 maximum, state.accuracyPenalty,
@@ -580,7 +500,7 @@ bool ReadWeaponSpreadState(const CCSPlayer *player, WeaponSpreadState &state) {
         }
     }
 
-#if defined(_WIN64) || defined(_M_X64) || defined(__x86_64__)
+#if ARCH_X64()
     PredictPreFireAccuracy(player, weaponInfo, state);
 #else
     if (state.inaccuracyOk) {

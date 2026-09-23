@@ -3,6 +3,7 @@
 #include <d3d9.h>
 #include <iostream>
 
+#include "core/arch.h"
 #include "features/config.h"
 #include "features/bone_esp.h"
 #include "features/menu.h"
@@ -84,9 +85,9 @@ LRESULT CALLBACK hkWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
 void ReleaseMenuMouse() {
     if (auto *surface = game::GetVguiSurface(); surface != nullptr) {
-        sdk::vgui::CallVFunc<void>(
+        sdk::vgui::CallSurfaceMethod(
             surface, sdk::vgui::kSurfaceUnlockCursor);
-        sdk::vgui::CallVFunc<void>(
+        sdk::vgui::CallSurfaceMethod(
             surface, sdk::vgui::kSurfaceSetCursor,
             sdk::vgui::kCursorArrow);
     }
@@ -191,11 +192,7 @@ void ShutdownImGui() {
 
 } // namespace
 
-#if defined(_M_IX86) || defined(__i386__)
 HRESULT __stdcall hkEndScene(IDirect3DDevice9 *device) {
-#else
-HRESULT hkEndScene(IDirect3DDevice9 *device) {
-#endif
     PollMenuToggle();
     SetMenuInputMode(features::GetConfig().menuOpen);
     InitImGui(device);

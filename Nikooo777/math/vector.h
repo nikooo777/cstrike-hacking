@@ -34,3 +34,5 @@ void AngleVectors(const Vector3 &angles, Vector3 *forward, Vector3 *right,
 
 // Degrees (pitch, yaw, 0) from a direction vector.
 Vector3 VectorAngles(const Vector3 &forward);
+
+bool IsFinite(const Vector3 &vector);

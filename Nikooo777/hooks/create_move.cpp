@@ -2,11 +2,13 @@
 
 #include <Windows.h>
 
+#include "core/arch.h"
 #include "core/constants.h"
 #include "features/aimbot.h"
 #include "features/bhop.h"
 #include "features/config.h"
 #include "features/debug_info.h"
+#include "features/fire_capture.h"
 #include "features/perfect_nospread.h"
 #include "features/triggerbot.h"
 #include "math/vector.h"
@@ -24,7 +26,7 @@ bool g_debugPendingForRealCommand = false;
 
 } // namespace
 
-#if defined(_M_IX86) || defined(__i386__)
+#if ARCH_X86()
 bool __fastcall hkCreateMove(void *thisPtr, void * /*edx*/, float flInputSampleTime, CUserCmd *userCmd) {
 #else
 bool hkCreateMove(void *thisPtr, float flInputSampleTime, CUserCmd *userCmd) {
@@ -35,7 +37,7 @@ bool hkCreateMove(void *thisPtr, float flInputSampleTime, CUserCmd *userCmd) {
     }
 
     const bool debugPressed = (GetAsyncKeyState(VK_F1) & 1) != 0;
-#if !defined(_M_IX86) && !defined(__i386__)
+#if ARCH_X64()
     if (debugPressed) {
         features::ArmClientFireDiagnostic();
     }
@@ -62,17 +64,16 @@ bool hkCreateMove(void *thisPtr, float flInputSampleTime, CUserCmd *userCmd) {
         aimbotApplied = features::Aimbot(userCmd);
     }
 
-    features::ApplyAimAndFireCorrections(userCmd, intendedCamera,
-                                          userCmd->viewangles,
-                                          aimbotApplied);
-#if !defined(_M_IX86) && !defined(__i386__)
-    features::CaptureClientFireCommand(userCmd);
+    const auto shotTrace = features::ApplyAimAndFireCorrections(
+        userCmd, intendedCamera, userCmd->viewangles, aimbotApplied);
+#if ARCH_X64()
+    features::CaptureClientFireCommand(userCmd, shotTrace);
 #endif
 
     // F1 after mutation so the dump shows final cmd angles / deltas for this tick.
     // Cone prediction uses a local RNG stream and does not reseed vstdlib.
     if (debugPressed || g_debugPendingForRealCommand) {
-        features::PrintDebugInfo(userCmd);
+        features::PrintDebugInfo(userCmd, &shotTrace);
         g_debugPendingForRealCommand = false;
     }
 
@@ -81,7 +82,6 @@ bool hkCreateMove(void *thisPtr, float flInputSampleTime, CUserCmd *userCmd) {
     // keeps the compensated simulation angles off the local camera without a
     // later SetViewAngles race against extra input samples/render stages.
     if (features::CommandAnglesChanged(userCmd, intendedCamera)) {
-        const auto &shotTrace = features::GetLastShotAngleTrace();
         if (shotTrace.noRecoilApplied ||
             features::GetConfig().silentAngles) {
             return false;

@@ -52,6 +52,7 @@ set(NIKOOO777_SOURCES
     Nikooo777/features/bhop.cpp
     Nikooo777/features/bone_esp.cpp
     Nikooo777/features/debug_info.cpp
+    Nikooo777/features/fire_capture.cpp
     Nikooo777/features/menu.cpp
     Nikooo777/features/norecoil.cpp
     Nikooo777/features/perfect_nospread.cpp

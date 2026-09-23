@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstdint>
 
+#include "core/arch.h"
 #include "config/config.h"
 #include "game/interfaces.h"
 #include "memory/mem.h"
@@ -12,7 +13,7 @@ namespace game {
 bool GetIntervalPerTick(float &interval) {
     interval = 0.0f;
 
-#if defined(_WIN64) || defined(_M_X64) || defined(__x86_64__)
+#if ARCH_X64()
     static bool attempted = false;
     static std::uintptr_t globalVarsSlot = 0;
     if (!attempted) {

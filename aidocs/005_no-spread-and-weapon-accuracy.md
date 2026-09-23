@@ -145,14 +145,16 @@ server code. Record observations honestly: "tracers straightened" is not
 | File | Responsibility |
 | --- | --- |
 | `hooks/create_move.cpp` | Zero-sequence guard, feature order, the camera return rule |
-| `features/perfect_nospread.cpp` | Reads live state, builds the request, records the F1 shot trace |
+| `features/perfect_nospread.cpp` | Reads live state, builds the request, returns the shot trace that `CreateMove` passes to F1 and the capture |
 | `features/norecoil.cpp` | Checked punch read through the `DT_Local` netvars |
 | `hooks/override_view.cpp` | Read-only visual punch removal and the view snapshot for chapter 006 |
-| `game/weapon.cpp` | Active weapon, getter calls, accuracy-model read, weapon-info lookup, pre-fire decay |
-| `game/weapon_math.cpp` | Command seed, local RNG, cone replay, inverse cone, `ComposeShotAngles`, punch decay |
+| `game/weapon.cpp` | Active weapon, getter calls, accuracy-model read, weapon-info lookup, pre-fire decay reads |
+| `sdk/client_offsets.h` | The client-only weapon, weapon-info, and prologue-shape offsets this chapter uses |
+| `game/weapon_math.cpp` | Command seed, local RNG, cone replay, inverse cone, `ComposeShotAngles`, punch decay, penalty-decay rule |
 | `game/timing.cpp` | Tick interval from `CGlobalVarsBase+0x1C` through the `GlobalVars` signature |
 | `hooks/client_fire_bullets.cpp`, `hooks/update_accuracy_penalty.cpp` | One-shot x64 diagnostic detours |
-| `features/debug_info.cpp` | F1 output (section 11) |
+| `features/fire_capture.cpp` | The x64 fire-time capture those detours feed (section 11.2) |
+| `features/debug_info.cpp` | F1 output (section 11.1) |
 | `tests/weapon_math_tests.cpp` | Offline seed, layout, cone, and composition tests |
 
 Resolution stays in `game/` and `game/interfaces.cpp`, not in feature bodies.
@@ -520,7 +522,9 @@ binary's float exponential.
 | airborne, standing | `+0x8EC` (stand) | `+0x920` | `-0.7675284` |
 | airborne, ducking | `+0x8E4` (crouch) | `+0x920` | `-0.7675284` |
 
-`game/weapon.cpp` mirrors this table. The `GlobalVars` signature anchors this
+`game::SelectPenaltyDecayRule` encodes this table as pure logic, and the
+offline tests check every row; `game/weapon.cpp` only reads the fields the rule
+names. The `GlobalVars` signature anchors this
 exact sequence, and its RIP-relative `MOV RAX,[slot]` loads the pointer slot;
 one pointer read yields `CGlobalVarsBase`. The signature is unique in both
 builds:
@@ -1290,7 +1294,7 @@ and runtime checks. The x86 profile keeps `perfect_nospread=false`.
 | Visual no-recoil | Implemented in ClientMode slot 16; player punch stays read-only |
 | Fire-time argument capture | Implemented on x64 through the verified `FX_FireBullets` call target |
 | `game::SetViewAngles` (slot 20) | Diagnostic only |
-| Offline tests | `tests/weapon_math_tests.cpp`; CTest passes on x86 and x64 |
+| Offline tests | `tests/weapon_math_tests.cpp`, including the penalty-decay table; CTest passes on x86 and x64 |
 
 The x64 sample satisfies the static-evidence, checked-read, diagnostic, build,
 offline-test, and local-smoke-test gates. The feature stays labeled

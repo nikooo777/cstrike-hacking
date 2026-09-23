@@ -4,7 +4,6 @@
 #include <cstddef>
 #include <cctype>
 #include <cmath>
-#include <limits>
 #include <string>
 
 #include "core/modules.h"
@@ -97,36 +96,6 @@ char *FindUniqueSignature(const config::Signature &signature,
     }
 
     return match;
-}
-
-bool HasUsableVtableSlot(const void *instance, std::size_t slot) {
-    auto *vtable = mem::ReadPointer<void>(instance);
-    if (vtable == nullptr || !mem::IsReadable(vtable, sizeof(void *))) {
-        return false;
-    }
-
-    const auto vtableAddress = reinterpret_cast<std::uintptr_t>(vtable);
-    if (slot > ((std::numeric_limits<std::uintptr_t>::max)() -
-                vtableAddress) / sizeof(void *)) {
-        return false;
-    }
-
-    const auto slotAddress = vtableAddress + slot * sizeof(void *);
-    if (!mem::IsReadable(reinterpret_cast<const void *>(slotAddress),
-                         sizeof(void *))) {
-        return false;
-    }
-
-    void *function = nullptr;
-    if (!mem::ReadValue(reinterpret_cast<const void *>(slotAddress),
-                        function)) {
-        return false;
-    }
-    return function != nullptr && mem::IsExecutable(function);
-}
-
-bool HasUsableVtable(const void *instance) {
-    return HasUsableVtableSlot(instance, 0);
 }
 
 bool DecodeConfiguredOperand(const char *name, char *scan,
@@ -239,7 +208,7 @@ ClientMode *GetClientMode() {
     }
     if (clientMode == nullptr ||
         (config::Get().settings.validatePointers &&
-         signature.validateVtable && !HasUsableVtable(clientMode))) {
+         signature.validateVtable && !mem::HasVirtual(clientMode, 0))) {
         std::cout << "ClientMode pointer or vtable is not usable" << std::endl;
         return nullptr;
     }
@@ -276,7 +245,7 @@ IClientEntityList *GetClientEntityList() {
     }
 
     if (config::Get().settings.validatePointers &&
-        !HasUsableVtable(g_clientEntityList)) {
+        !mem::HasVirtual(g_clientEntityList, 0)) {
         std::cout << "ClientEntityList vtable is not usable" << std::endl;
         g_clientEntityList = nullptr;
         return nullptr;
@@ -316,9 +285,9 @@ EngineClient *GetEngineClient() {
     }
 
     if (config::Get().settings.validatePointers &&
-        (!HasUsableVtableSlot(
+        (!mem::HasVirtual(
              g_engineClient, kEngineClientGetViewAnglesVtableIndex) ||
-         !HasUsableVtableSlot(
+         !mem::HasVirtual(
              g_engineClient, kEngineClientSetViewAnglesVtableIndex))) {
         std::cout << "EngineClient Get/SetViewAngles vtable slots are not usable"
                   << std::endl;
@@ -360,7 +329,7 @@ sdk::trace::EngineTrace *GetEngineTrace() {
     }
 
     if (config::Get().settings.validatePointers &&
-        !HasUsableVtableSlot(g_engineTrace,
+        !mem::HasVirtual(g_engineTrace,
                              sdk::trace::kTraceRayVtableIndex)) {
         std::cout << "EngineTrace TraceRay vtable slot is not usable"
                   << std::endl;
@@ -402,7 +371,7 @@ sdk::render::RenderView *GetRenderView() {
     }
 
     if (config::Get().settings.validatePointers &&
-        !HasUsableVtableSlot(
+        !mem::HasVirtual(
             g_renderView, sdk::render::kGetMatricesForViewVtableIndex)) {
         std::cout << "RenderView GetMatricesForView vtable slot is not usable"
                   << std::endl;
@@ -443,7 +412,7 @@ sdk::render::ModelInfo *GetModelInfo() {
     }
 
     if (config::Get().settings.validatePointers &&
-        !HasUsableVtableSlot(
+        !mem::HasVirtual(
             g_modelInfo, sdk::render::kGetStudiomodelVtableIndex)) {
         std::cout << "ModelInfo GetStudiomodel vtable slot is not usable"
                   << std::endl;
@@ -481,23 +450,9 @@ bool CallEngineViewAngles(Vector3 &angles, int slotIndex) {
         return false;
     }
 
-    auto *vtable = mem::ReadPointer<void>(engineClient);
-    if (vtable == nullptr) {
-        return false;
-    }
-
-    const auto slot = static_cast<std::size_t>(slotIndex);
-    const auto vtableAddress = reinterpret_cast<std::uintptr_t>(vtable);
-    if (slot > ((std::numeric_limits<std::uintptr_t>::max)() -
-                vtableAddress) / sizeof(void *)) {
-        return false;
-    }
-
     void *method = nullptr;
-    const auto methodAddress = vtableAddress + slot * sizeof(void *);
-    if (!mem::ReadValue(reinterpret_cast<const void *>(methodAddress),
-                        method) ||
-        method == nullptr || !mem::IsExecutable(method)) {
+    if (!mem::ReadVirtual(engineClient, static_cast<std::size_t>(slotIndex),
+                          method)) {
         return false;
     }
 
@@ -540,22 +495,10 @@ bool GetWorldToProjection(const CViewSetup &viewSetup,
         return false;
     }
 
-    auto *vtable = mem::ReadPointer<void>(renderView);
-    if (vtable == nullptr) {
-        return false;
-    }
-
-    const auto vtableAddress = reinterpret_cast<std::uintptr_t>(vtable);
-    const auto slot = sdk::render::kGetMatricesForViewVtableIndex;
-    if (slot > (std::numeric_limits<std::size_t>::max)() / sizeof(void *) ||
-        vtableAddress > (std::numeric_limits<std::uintptr_t>::max)() -
-                             slot * sizeof(void *)) {
-        return false;
-    }
-    const auto methodAddress = vtableAddress + slot * sizeof(void *);
     void *method = nullptr;
-    if (!mem::ReadValue(reinterpret_cast<const void *>(methodAddress), method) ||
-        method == nullptr || !mem::IsExecutable(method)) {
+    if (!mem::ReadVirtual(renderView,
+                          sdk::render::kGetMatricesForViewVtableIndex,
+                          method)) {
         return false;
     }
 
@@ -596,23 +539,9 @@ bool TraceLine(const Vector3 &start, const Vector3 &end,
         return false;
     }
 
-    auto *vtable = mem::ReadPointer<void>(engineTrace);
-    if (vtable == nullptr) {
-        return false;
-    }
-
-    const auto slot = sdk::trace::kTraceRayVtableIndex;
-    const auto vtableAddress = reinterpret_cast<std::uintptr_t>(vtable);
-    if (slot > ((std::numeric_limits<std::uintptr_t>::max)() -
-                vtableAddress) /
-                   sizeof(void *)) {
-        return false;
-    }
-
     void *method = nullptr;
-    const auto methodAddress = vtableAddress + slot * sizeof(void *);
-    if (!mem::ReadValue(reinterpret_cast<const void *>(methodAddress), method) ||
-        method == nullptr || !mem::IsExecutable(method)) {
+    if (!mem::ReadVirtual(engineTrace, sdk::trace::kTraceRayVtableIndex,
+                          method)) {
         return false;
     }
 

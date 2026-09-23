@@ -265,11 +265,32 @@ bool mem::IsExecutable(const void *address, std::size_t size) {
     return true;
 }
 
+bool mem::ReadVirtual(const void *object, std::size_t slot, void *&function) {
+    function = nullptr;
+    std::uintptr_t vtable = 0;
+    if (object == nullptr || !ReadValue(object, vtable) || vtable == 0 ||
+        slot > ((std::numeric_limits<std::uintptr_t>::max)() - vtable) /
+                   sizeof(void *) ||
+        !ReadValue(reinterpret_cast<const void *>(vtable + slot * sizeof(void *)),
+                   function) ||
+        function == nullptr || !IsExecutable(function)) {
+        function = nullptr;
+        return false;
+    }
+    return true;
+}
+
 bool mem::ReadBytes(const void *address, void *destination, std::size_t size) {
+    // The region check rejects guard pages, which a faulting read would
+    // silently disarm. SEH covers memory released after the check.
     if (destination == nullptr || !IsReadable(address, size)) {
         return false;
     }
-    std::memcpy(destination, address, size);
+    __try {
+        std::memcpy(destination, address, size);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
     return true;
 }
 

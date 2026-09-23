@@ -4,6 +4,7 @@
 #include <iostream>
 #include <string>
 
+#include "core/arch.h"
 #include "MinHook.h"
 #include "config/config.h"
 #include "features/debug_info.h"
@@ -21,7 +22,7 @@ CreateMoveFn originalCreateMove = nullptr;
 OverrideViewFn originalOverrideView = nullptr;
 LockCursorFn originalLockCursor = nullptr;
 EndSceneFn originalEndScene = nullptr;
-#if !defined(_M_IX86) && !defined(__i386__)
+#if ARCH_X64()
 ClientFireBulletsFn originalClientFireBullets = nullptr;
 UpdateAccuracyPenaltyFn originalUpdateAccuracyPenalty = nullptr;
 #endif
@@ -29,45 +30,24 @@ UpdateAccuracyPenaltyFn originalUpdateAccuracyPenalty = nullptr;
 namespace {
 
 // IClientMode::CreateMove is vtable index 21 on this CS:S client build.
-constexpr int kCreateMoveVtableIndex = 21;
-constexpr int kOverrideViewVtableIndex = 16;
+constexpr std::size_t kCreateMoveVtableIndex = 21;
+constexpr std::size_t kOverrideViewVtableIndex = 16;
 // IDirect3DDevice9::EndScene is vtable index 42.
-constexpr int kEndSceneVtableIndex = 42;
-
-template <typename T>
-T GetVFunc(void *instance, int index) {
-    auto **vtable = *reinterpret_cast<void ***>(instance);
-    return reinterpret_cast<T>(vtable[index]);
-}
+constexpr std::size_t kEndSceneVtableIndex = 42;
 
 void *GetCreateMoveAddress(ClientMode *clientMode) {
-    // ClientMode pointer → vtable → CreateMove slot.
-    return reinterpret_cast<void *>(GetVFunc<CreateMoveFn>(clientMode, kCreateMoveVtableIndex));
+    return mem::GetVirtual<void *>(clientMode, kCreateMoveVtableIndex);
 }
 
 void *GetOverrideViewAddress(ClientMode *clientMode) {
-    return reinterpret_cast<void *>(
-        GetVFunc<OverrideViewFn>(clientMode, kOverrideViewVtableIndex));
+    return mem::GetVirtual<void *>(clientMode, kOverrideViewVtableIndex);
 }
 
 void *GetLockCursorAddress(void *surface) {
-    auto *vtable = mem::ReadPointer<void>(surface);
-    if (vtable == nullptr) {
-        return nullptr;
-    }
-
-    void *address = nullptr;
-    const auto slotAddress =
-        reinterpret_cast<std::uintptr_t>(vtable) +
-        sdk::vgui::kSurfaceLockCursor * sizeof(void *);
-    if (!mem::ReadValue(reinterpret_cast<const void *>(slotAddress), address) ||
-        address == nullptr || !mem::IsExecutable(address)) {
-        return nullptr;
-    }
-    return address;
+    return mem::GetVirtual<void *>(surface, sdk::vgui::kSurfaceLockCursor);
 }
 
-#if !defined(_M_IX86) && !defined(__i386__)
+#if ARCH_X64()
 void *GetClientFireBulletsAddress() {
     const auto &signature = config::Get().clientFireBullets;
     std::size_t matchCount = 0;
@@ -148,9 +128,14 @@ DWORD __stdcall MainThread(void *pModule) {
         return 1;
     }
     void *overrideViewAddress = GetOverrideViewAddress(clientMode);
+    void *createMoveAddress = GetCreateMoveAddress(clientMode);
+    if (overrideViewAddress == nullptr || createMoveAddress == nullptr) {
+        std::cout << "ClientMode OverrideView/CreateMove slots are not executable"
+                  << std::endl;
+        return 1;
+    }
     std::cout << "OverrideView: 0x" << std::hex << overrideViewAddress
               << std::endl;
-    void *createMoveAddress = GetCreateMoveAddress(clientMode);
     std::cout << "CreateMove: 0x" << std::hex << createMoveAddress << std::endl;
 
     void *vguiSurface = game::GetVguiSurface();
@@ -167,7 +152,7 @@ DWORD __stdcall MainThread(void *pModule) {
     std::cout << "LockCursor: 0x" << std::hex << lockCursorAddress
               << std::endl;
 
-#if !defined(_M_IX86) && !defined(__i386__)
+#if ARCH_X64()
     void *clientFireBulletsAddress = GetClientFireBulletsAddress();
     void *updateAccuracyPenaltyAddress =
         GetUpdateAccuracyPenaltyAddress();
@@ -202,7 +187,7 @@ DWORD __stdcall MainThread(void *pModule) {
                       reinterpret_cast<LPVOID *>(&originalEndScene)) != MH_OK) {
         return 1;
     }
-#if !defined(_M_IX86) && !defined(__i386__)
+#if ARCH_X64()
     if (clientFireBulletsAddress != nullptr &&
         MH_CreateHook(clientFireBulletsAddress, (LPVOID)&hkClientFireBullets,
                       reinterpret_cast<LPVOID *>(
@@ -227,7 +212,7 @@ DWORD __stdcall MainThread(void *pModule) {
         MH_EnableHook(endSceneAddress) != MH_OK) {
         return 1;
     }
-#if !defined(_M_IX86) && !defined(__i386__)
+#if ARCH_X64()
     if (clientFireBulletsAddress != nullptr &&
         MH_EnableHook(clientFireBulletsAddress) != MH_OK) {
         std::cout << "ClientFireBullets diagnostic hook could not be enabled"
@@ -255,7 +240,7 @@ DWORD __stdcall MainThread(void *pModule) {
     MH_DisableHook(overrideViewAddress);
     MH_DisableHook(lockCursorAddress);
     MH_DisableHook(endSceneAddress);
-#if !defined(_M_IX86) && !defined(__i386__)
+#if ARCH_X64()
     if (clientFireBulletsAddress != nullptr) {
         MH_DisableHook(clientFireBulletsAddress);
     }

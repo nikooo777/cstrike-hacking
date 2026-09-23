@@ -10,6 +10,8 @@
 #include <utility>
 #include <vector>
 
+#include "core/arch.h"
+
 namespace config {
 
 namespace {
@@ -387,7 +389,7 @@ bool Load(HMODULE selfModule, std::string &error) {
                        candidate.clientMode, error) ||
         !ReadSignature(ini, "signature.weaponinfolookup", "WeaponInfoLookup",
                        candidate.weaponInfoLookup, error) ||
-#if defined(_WIN64) || defined(_M_X64) || defined(__x86_64__)
+#if ARCH_X64()
         !ReadSignature(ini, "signature.clientfirebullets", "ClientFireBullets",
                        candidate.clientFireBullets, error) ||
         !ReadSignature(ini, "signature.globalvars", "GlobalVars",

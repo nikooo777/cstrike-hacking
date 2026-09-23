@@ -27,7 +27,7 @@ This is a teaching codebase tied to one Counter-Strike: Source client build. It 
 |------------|--------------|----------------|
 | Bunny hop | `CreateMove` / hold **Space** | `features/bhop.cpp` writes the client's force-jump command. |
 | Aimbot | `CreateMove` / hold **LMB** | `features/aimbot.cpp` checks bone 14 and `IEngineTrace` visibility, then chooses the closest visible enemy; the candidate set is rebuilt every tick so dead or unreadable targets fall through to the next candidate. |
-| Triggerbot | `CreateMove` / hold **Shift** | `features/triggerbot.cpp` uses the client-only crosshair target (`m_iIDEntIndex`); the x64 field is `player + 0x1B20`, but the x64 profile keeps the feature off until its complete input/target path is validated. |
+| Triggerbot | `CreateMove` / hold **Shift** | `features/triggerbot.cpp` uses the client-only crosshair target (`m_iCrosshairID`); the x64 field is `player + 0x1B20`, but the x64 profile keeps the feature off until its complete input/target path is validated. |
 | Command no-recoil | `CreateMove` | `features/perfect_nospread.cpp` composes the configured punch policy with aim and spread in fire space; `features/norecoil.cpp` supplies checked punch state. |
 | Perfect no-spread | `CreateMove` | Replays the verified x64 CS polar cone and applies inverse command-angle compensation; default off because the feature remains build-specific and exploratory. |
 | Silent angles | `CreateMove` return value | Prevents compensated command angles from being copied into the render camera. |
@@ -78,13 +78,14 @@ END                 -> disable hooks, shut down ImGui, unload the DLL
 ```text
 Nikooo777/
   dllmain.cpp              # DllMain only — starts the main thread
-  core/                    # constants, padding macros, module bases
+  core/                    # constants, padding macros, module bases, ARCH_X64()/ARCH_X86()
   config/                  # runtime INI loader
-  memory/                  # pattern scanner (ScanModCombo, module size, …)
+  memory/                  # pattern scanner, checked reads, checked vtable slots (mem::GetVirtual)
   math/                    # Vector3 and checked world-to-screen projection
   netvars/                 # runtime ClientClass/RecvTable/RecvProp resolver
   sdk/                     # Source-like types only (no feature logic)
     entity/                # CLocal, CBasePlayer, CCSPlayer
+    client_offsets.h       # every build-specific client-only offset, with its aidocs section
     user_cmd.h, client_*.h, engine_*.h, vgui_surface.h, view_setup.h, create_interface.*
   game/                    # live game access
     entity_list.*          # local player + IClientEntityList access
@@ -93,10 +94,11 @@ Nikooo777/
     render_state.*         # final OverrideView snapshot for render features
     player.*               # IsAlive, IsEnemy, IsValidTarget, EyePosition
   hooks/                   # MinHook lifecycle + individual hooks + dummy D3D device
-  features/                # gameplay logic + menu + Bone ESP + config flags
+  features/                # gameplay logic + menu + Bone ESP + F1 dump + fire-time capture + config flags
 imgui/                     # Dear ImGui + DX9 / Win32 backends
 minhook/                   # vendored source, headers, license, and legacy x86 libs
 config/                    # architecture-specific signatures, settings, provenance
+tools/                     # build-comparison scripts and the Ghidra byte-export script
 ```
 
 ### Layer rules (keep the tutorial readable)
@@ -108,9 +110,10 @@ config/                    # architecture-specific signatures, settings, provena
 5. **`dllmain.cpp`** — attach / detach only.
 
 Networked entity members use runtime `RecvTable` accessors (`DEFINE_NETVAR`) so their
-displacements come from the loaded client metadata. Client-only fields are kept
-explicit only after they are verified for the selected architecture; the x64
-crosshair target is the `C_CSPlayer::GetIDTarget` field at `player + 0x1B20`.
+displacements come from the loaded client metadata. Client-only fields live in
+`sdk/client_offsets.h`, and only after they are verified for the selected
+architecture; the x64 crosshair target is the `C_CSPlayer::GetIDTarget` field at
+`player + 0x1B20`.
 View angles are read through the named `VEngineClient` interface at vtable slot
 19 instead of a copied x64 `ClientState` overlay. Entity lookup and input
 buttons use the named interface/command sources documented in `aidocs/003`.
@@ -121,7 +124,7 @@ buttons use the named interface/command sources documented in `aidocs/003`.
 |------|--------|
 | New cheat feature | `features/foo.*` → call from `hooks/create_move.cpp` (logic) or `hooks/end_scene.cpp` (draw) → add `.cpp` to `CMakeLists.txt` → optional toggle in `features/config.h` + menu |
 | Networked player / entity field | Resolve and add its `RecvTable` path in `sdk/entity/` with `DEFINE_NETVAR`; document the discovery in `aidocs/002_netvars-and-entity-offsets.md`. |
-| Client-only entity field | `sdk/entity/` with `DEFINE_MEMBER`, after verifying that it is not in a receive table. |
+| Client-only entity field | Add the offset to `sdk/client_offsets.h` with its aidocs section, after verifying that it is not in a receive table; expose it from `sdk/entity/` with `DEFINE_MEMBER` or read it in `game/`. |
 | Global address or input slot | Prefer a named interface or `CUserCmd`; document a true signature in `aidocs/003_global-addresses-and-inputs.md` when no semantic source exists. |
 | New interface / signature | Add the pattern, operand rule, and provenance to the matching architecture profile (`config/signatures.ini` for x86 or `config/signatures-x64.ini` for x64); keep resolution logic in `game/interfaces.cpp` and explain discovery in `aidocs/`. |
 | Shared target / eye helpers | `game/player.*` |
@@ -239,10 +242,11 @@ These are the files to revisit when the client build changes:
 |------|------------------|
 | `netvars/netvars.*` | Runtime `ClientClass`/`RecvTable` traversal and entity-relative offsets. |
 | `sdk/client_entity_list.h` / `game/entity_list.cpp` | Named `VClientEntityList003` interface and player-slot translation. |
-| `sdk/entity/*.h` | Netvar-backed entity accessors plus explicitly client-only fields and the remaining padded layout. |
+| `sdk/entity/*.h` | Netvar-backed entity accessors and the two client-only accessors (crosshair target, x86 dormancy). |
+| `sdk/client_offsets.h` | Every build-specific client-only field offset and code shape, grouped by the aidocs section that holds its evidence. |
 | `config/signatures.ini` / `config/signatures-x64.ini` | Architecture-specific patterns, named interfaces, operand decoders, pointer indirections, validation settings, feature defaults, and discovery links. |
 | `game/interfaces.cpp` | `CreateInterface` lookup plus configured entity-list, render/model interfaces, view-matrix retrieval, EngineClient, EngineTrace, ClientState, and ClientMode resolution logic. |
-| `game/model.cpp` / `math/projection.cpp` | Checked studio parent-link lookup and row-major world-to-screen projection used by the experimental Bone ESP path. |
+| `game/model.cpp` / `math/projection.cpp` | Checked studio parent-link lookup and `VMatrix`-convention world-to-screen projection used by the experimental Bone ESP path. |
 | `hooks/hooks.cpp` | Vtable slots for `OverrideView`, `CreateMove`, `VGUI_Surface030::LockCursor`, and `EndScene`. |
 | `core/constants.h` | Entity stride, player limits, team values, and movement flags. |
 
@@ -301,7 +305,7 @@ provenance fields whenever a new build is reverse-engineered.
 | Finding view angles | [Odysee](https://odysee.com/@Swiss-Experiments:a/finding-viewangles-with-ida-for-counter:e) · [YouTube](https://www.youtube.com/watch?v=mS8ZQ5N7Dvk) |
 | Finding bone matrix | [Odysee](https://odysee.com/@Swiss-Experiments:a/how-to-locate-bonematrix:5) · [YouTube](https://www.youtube.com/watch?v=elKUMiqitxY) |
 
-Remaining client-only offsets in the entity headers are for the client build this project was developed against. The x64 bone-cache offsets documented in `aidocs/004` came from the current `SetupBones` implementation, but they still need to be re-dumped if the binary changes.
+The client-only offsets in `sdk/client_offsets.h` are for the client builds this project was verified against. The x64 bone-cache offsets documented in `aidocs/004` came from the current `SetupBones` implementation, but they still need to be re-dumped if the binary changes.
 
 The signature records point back to this section and the numbered tutorial so the pattern bytes, operand offsets, and pointer-chain assumptions can be re-derived instead of copied blindly.
 

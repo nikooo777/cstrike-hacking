@@ -1,11 +1,12 @@
 #include "hooks/hooks.h"
 
+#include "core/arch.h"
 #include "features/config.h"
 #include "sdk/vgui_surface.h"
 
 namespace hooks {
 
-#if defined(_M_IX86) || defined(__i386__)
+#if ARCH_X86()
 void __fastcall hkLockCursor(void *thisPtr, void * /*edx*/) {
 #else
 void hkLockCursor(void *thisPtr) {
@@ -15,8 +16,8 @@ void hkLockCursor(void *thisPtr) {
         return;
     }
 
-    sdk::vgui::CallVFunc<void>(thisPtr, sdk::vgui::kSurfaceUnlockCursor);
-    sdk::vgui::CallVFunc<void>(
+    sdk::vgui::CallSurfaceMethod(thisPtr, sdk::vgui::kSurfaceUnlockCursor);
+    sdk::vgui::CallSurfaceMethod(
         thisPtr, sdk::vgui::kSurfaceSetCursor,
         sdk::vgui::kCursorArrow);
 }

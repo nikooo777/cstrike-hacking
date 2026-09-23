@@ -218,6 +218,26 @@ bool PredictNextAccuracyPenalty(int shotsFired, float divisor,
     return std::isfinite(out) && out >= 0.0f;
 }
 
+PenaltyDecayRule SelectPenaltyDecayRule(bool onLadder, bool onGround,
+                                        bool ducking) {
+    PenaltyDecayRule rule{};
+    if (onLadder) {
+        rule.baseline = PenaltyBaseline::StandPlusLadder;
+        rule.recovery = PenaltyRecovery::Stand;
+        return rule;
+    }
+
+    rule.baseline = ducking ? PenaltyBaseline::Crouch : PenaltyBaseline::Stand;
+    if (!onGround) {
+        rule.recovery = PenaltyRecovery::Crouch;
+        rule.decayConstant = kAirbornePenaltyDecay;
+    } else {
+        rule.recovery =
+            ducking ? PenaltyRecovery::Crouch : PenaltyRecovery::Stand;
+    }
+    return rule;
+}
+
 bool PredictAccuracyPenaltyDecay(float currentPenalty, float baseline,
                                  float recoveryTime, float intervalPerTick,
                                  float decayConstant, float &out) {

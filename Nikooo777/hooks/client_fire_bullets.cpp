@@ -1,11 +1,12 @@
 #include "hooks/hooks.h"
 
-#include "features/debug_info.h"
+#include "core/arch.h"
+#include "features/fire_capture.h"
 #include "math/vector.h"
 
 namespace hooks {
 
-#if !defined(_M_IX86) && !defined(__i386__)
+#if ARCH_X64()
 void hkClientFireBullets(int playerIndex, const Vector3 *origin,
                          const Vector3 *fireAngles, int weaponId, int mode,
                          int seed, float inaccuracy, float spread,

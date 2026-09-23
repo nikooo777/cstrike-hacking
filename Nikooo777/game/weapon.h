@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 
 #include "game/weapon_math.h"
@@ -66,7 +67,7 @@ bool ReadWeaponSpreadState(const CCSPlayer *player, WeaponSpreadState &state);
 // Call virtual GetInaccuracy / GetSpread (slots 382 / 383). Fail closed.
 bool GetWeaponInaccuracy(WeaponEntity weapon, float &out);
 bool GetWeaponSpread(WeaponEntity weapon, float &out);
-bool GetWeaponMethodAddress(WeaponEntity weapon, int slot,
+bool GetWeaponMethodAddress(WeaponEntity weapon, std::size_t slot,
                             std::uintptr_t &address);
 bool GetWeaponId(WeaponEntity weapon, int &out);
 

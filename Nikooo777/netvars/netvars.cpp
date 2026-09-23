@@ -12,13 +12,14 @@
 #include <string>
 #include <vector>
 
+#include "core/arch.h"
 #include "memory/mem.h"
 
 namespace netvars {
 
 namespace {
 
-#if defined(_WIN64) || defined(_M_X64) || defined(__x86_64__)
+#if ARCH_X64()
 static_assert(sizeof(void *) == 8, "Expected the x64 netvar metadata ABI");
 static_assert(offsetof(ClientClass, recvTable) == 24,
               "Unexpected x64 ClientClass layout");

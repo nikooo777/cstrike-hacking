@@ -1,5 +1,6 @@
 #include "features/bone_esp.h"
 
+#include <algorithm>
 #include <cmath>
 #include <mutex>
 #include <vector>
@@ -68,6 +69,8 @@ void DrawBoneEsp(float viewportX, float viewportY, float viewportWidth,
     }
 
     ImDrawList *drawList = ImGui::GetForegroundDrawList();
+    std::vector<int> parents;
+    std::vector<Vector3> positions;
     for (int playerIndex = 1; playerIndex < MAXPLAYERS; ++playerIndex) {
         auto *target = game::GetPlayer(playerIndex);
         if (!game::IsValidTarget(local, target)) {
@@ -75,7 +78,6 @@ void DrawBoneEsp(float viewportX, float viewportY, float viewportWidth,
         }
         ++diagnostics.candidates;
 
-        std::vector<int> parents;
         game::BoneHierarchyInfo hierarchy{};
         if (!game::GetBoneParents(target, parents, &hierarchy)) {
             continue;
@@ -85,17 +87,21 @@ void DrawBoneEsp(float viewportX, float viewportY, float viewportWidth,
         diagnostics.studioHeaderAddress = hierarchy.studioHeaderAddress;
         diagnostics.boneCount = hierarchy.boneCount;
 
-        for (std::size_t bone = 0; bone < parents.size(); ++bone) {
+        if (!game::GetBonePositions(target, positions)) {
+            continue;
+        }
+
+        const auto bones = std::min(parents.size(), positions.size());
+        for (std::size_t bone = 0; bone < bones; ++bone) {
             const int parent = parents[bone];
-            if (parent < 0 || parent >= static_cast<int>(parents.size())) {
+            if (parent < 0 || static_cast<std::size_t>(parent) >= bones) {
                 continue;
             }
 
-            Vector3 bonePosition{};
-            Vector3 parentPosition{};
-            if (!game::GetBonePosition(target, static_cast<int>(bone),
-                                       bonePosition) ||
-                !game::GetBonePosition(target, parent, parentPosition)) {
+            const Vector3 &bonePosition = positions[bone];
+            const Vector3 &parentPosition =
+                positions[static_cast<std::size_t>(parent)];
+            if (!IsFinite(bonePosition) || !IsFinite(parentPosition)) {
                 continue;
             }
 

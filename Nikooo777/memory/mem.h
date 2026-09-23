@@ -3,6 +3,7 @@
 #include <Windows.h>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <type_traits>
 #include <vector>
 
@@ -38,6 +39,27 @@ template <typename T>
 T *ReadPointer(const void *address) {
     T *value = nullptr;
     return ReadValue(address, value) ? value : nullptr;
+}
+
+inline bool AddDoesNotOverflow(std::uintptr_t base, std::uintptr_t offset) {
+    return offset <= (std::numeric_limits<std::uintptr_t>::max)() - base;
+}
+
+// Reads vtable entry `slot` of a game object and requires an executable
+// target, so a stale object or wrong slot fails here instead of in the call.
+bool ReadVirtual(const void *object, std::size_t slot, void *&function);
+
+inline bool HasVirtual(const void *object, std::size_t slot) {
+    void *function = nullptr;
+    return ReadVirtual(object, slot, function);
+}
+
+template <typename Function>
+Function GetVirtual(const void *object, std::size_t slot) {
+    void *function = nullptr;
+    return ReadVirtual(object, slot, function)
+               ? reinterpret_cast<Function>(function)
+               : nullptr;
 }
 
 void Patch(BYTE *dst, BYTE *src, unsigned int size);

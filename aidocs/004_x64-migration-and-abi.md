@@ -300,6 +300,7 @@ Slots verified for the sample x64 build, counting from zero:
 | `IClientUnknown` | `GetClientNetworkable` | 4 | section 9.2 |
 | `IClientNetworkable` | `IsDormant` | 8 | section 9.2 |
 | `IClientRenderable` | `GetModel` | 9 | chapter 006 |
+| `C_CSPlayer` | fire-angle source (diagnostic only) | 143 | chapter 005, section 11 |
 | `VEngineRenderView014` | `GetMatricesForView` | 50 | chapter 006 |
 | `VModelInfoClient006` | `GetStudiomodel` | 28 | chapter 006 |
 | `VGUI_Surface030` | `SetCursor` | 51 | section 6.3 |
@@ -705,9 +706,27 @@ tutorial's Ghidra project (`/source-engine-tutorial/x64`):
    databases to a scratch directory, leaving the original and its lock alone.
    Change the owner in the copy's `project.prp` if the project was created on
    another machine or account.
-2. Run `analyzeHeadless` on the copy with `-readOnly -noanalysis` and a small
-   script that writes `Memory.getAllFileBytes()` back out through
-   `FileBytes.getOriginalBytes`.
+2. Run `analyzeHeadless` on the copy with `-readOnly -noanalysis` and
+   `tools/ghidra/ExportFileBytes.java`, which writes `Memory.getAllFileBytes()`
+   back out through `FileBytes.getOriginalBytes`:
+
+   ```sh
+   analyzeHeadless <copy> css/source-engine-tutorial/x64 -process client.dll \
+       -readOnly -noanalysis -scriptPath tools/ghidra \
+       -postScript ExportFileBytes.java <output dir>
+   ```
+
+The comparisons below are scripted in `tools/`:
+
+```sh
+tools/check_signatures.py config/signatures-x64.ini <install or DLL dir>
+tools/compare_builds.py <old DLL dir> <new install> --locate client.dll:0x152290
+```
+
+`check_signatures.py` reports each pattern's match count and decoded target.
+`compare_builds.py` compares every vtable slot the DLL calls between two builds
+and relocates any `--locate` function. Both exit non-zero when something needs
+a new reversal.
 
 The recovered `vguimatsurface.dll` hashes to the value recorded in section 6.3,
 which confirms that these are the tutorial's binaries.
@@ -748,7 +767,7 @@ compared after masking call, jump, and RIP-relative displacements:
 | `CHLClient` | 79 / 79 | 8, 14, 15, 35 | used slots unchanged; 2 other slots changed |
 | `CClientEntityList` + `0x40028` | 9 / 9 | 3, 4 | all unchanged |
 | `ClientModeCSNormal` | 54 / 54 | 16, 21 | used slots unchanged; 8 other slots changed |
-| `C_CSPlayer` (`+0x0`, `+0x8`, `+0x10`) | 303 / 45 / 14 in both | 4, 9, 8 | used slots unchanged |
+| `C_CSPlayer` (`+0x0`, `+0x8`, `+0x10`) | 303 / 45 / 14 in both | 4, 143, 9, 8 | used slots unchanged |
 | `C_WeaponCSBaseGun` / `C_AK47` | 386 / 386 | 370, 371, 382, 383, 384 | used slots unchanged |
 | `CCSGameMovement` | 56 / 56 | 15 | used slot unchanged |
 

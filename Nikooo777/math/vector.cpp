@@ -124,3 +124,8 @@ Vector3 VectorAngles(const Vector3 &forward) {
     angles.NormalizeAngles();
     return angles;
 }
+
+bool IsFinite(const Vector3 &vector) {
+    return std::isfinite(vector.x) && std::isfinite(vector.y) &&
+           std::isfinite(vector.z);
+}

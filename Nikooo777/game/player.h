@@ -1,5 +1,7 @@
 #pragma once
 
+#include <vector>
+
 #include "sdk/entity/c_base_player.h"
 #include "sdk/entity/c_cs_player.h"
 #include "math/vector.h"
@@ -29,5 +31,9 @@ bool GetLocalEyeAngles(const CBasePlayer *player, Vector3 &angles);
 Vector3 EyePosition(const CBasePlayer *player);
 bool GetBoneCacheInfo(const CBasePlayer *player, BoneCacheInfo &cache);
 bool GetBonePosition(const CBasePlayer *player, int bone, Vector3 &position);
+// Reads the whole cached skeleton with one checked copy. Positions are
+// returned as stored; callers check each one with IsFinite before use.
+bool GetBonePositions(const CBasePlayer *player,
+                      std::vector<Vector3> &positions);
 
 } // namespace game

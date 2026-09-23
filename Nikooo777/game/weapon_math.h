@@ -59,6 +59,23 @@ bool PredictNextAccuracyPenalty(int shotsFired, float divisor,
                                 bool quadratic, float offset, float cap,
                                 float currentPenalty, float &out);
 
+// aidocs/005 section 5.6: the movement state selects which weapon-info fields
+// and which decay constant the slot-384 penalty decay uses.
+enum class PenaltyBaseline { Stand, Crouch, StandPlusLadder };
+enum class PenaltyRecovery { Stand, Crouch };
+
+inline constexpr float kGroundPenaltyDecay = -2.3025851f;
+inline constexpr float kAirbornePenaltyDecay = -0.7675284f;
+
+struct PenaltyDecayRule {
+    PenaltyBaseline baseline = PenaltyBaseline::Stand;
+    PenaltyRecovery recovery = PenaltyRecovery::Stand;
+    float decayConstant = kGroundPenaltyDecay;
+};
+
+PenaltyDecayRule SelectPenaltyDecayRule(bool onLadder, bool onGround,
+                                        bool ducking);
+
 bool PredictAccuracyPenaltyDecay(float currentPenalty, float baseline,
                                  float recoveryTime, float intervalPerTick,
                                  float decayConstant, float &out);

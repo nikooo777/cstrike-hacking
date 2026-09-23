@@ -1,5 +1,6 @@
 #include "hooks/hooks.h"
 
+#include "core/arch.h"
 #include "features/config.h"
 #include "features/norecoil.h"
 #include "game/entity_list.h"
@@ -8,7 +9,7 @@
 
 namespace hooks {
 
-#if defined(_M_IX86) || defined(__i386__)
+#if ARCH_X86()
 void __fastcall hkOverrideView(void *thisPtr, void * /*edx*/,
                                CViewSetup *viewSetup) {
 #else

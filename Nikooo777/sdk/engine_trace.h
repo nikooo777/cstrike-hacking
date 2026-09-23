@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "core/arch.h"
 #include "math/vector.h"
 
 namespace sdk::trace {
@@ -140,13 +141,9 @@ private:
 
 class EngineTrace {};
 
-#if defined(_M_IX86) || defined(__i386__)
-using TraceRayFn = void(__thiscall *)(void *thisPtr, const Ray &ray,
-                                      unsigned int mask,
-                                      ITraceFilter *filter, GameTrace *trace);
-#else
-using TraceRayFn = void (*)(void *thisPtr, const Ray &ray, unsigned int mask,
-                            ITraceFilter *filter, GameTrace *trace);
-#endif
+using TraceRayFn = void(ARCH_THISCALL *)(void *thisPtr, const Ray &ray,
+                                         unsigned int mask,
+                                         ITraceFilter *filter,
+                                         GameTrace *trace);
 
 } // namespace sdk::trace

@@ -201,11 +201,30 @@ itself uses the polar hit test, not ImGui widgets.
 - **Clicking an item** toggles it, or runs it if it is an action. Status items
   are read-only.
 
-The `VGUI_Surface030::LockCursor` hook from chapter 004 section 6.3 keeps the engine from recentering the mouse while the
-menu is open. The window procedure hook already swallows mouse buttons and
-`WM_MOUSEWHEEL` while the menu is open, so a click or a scroll in the wheel
-should not also fire or switch weapons. That holds as long as the game reads
-them from window messages, which has not been checked in the game.
+The `VGUI_Surface030::LockCursor` hook from chapter 004 section 6.3 keeps the
+engine from recentering the mouse while the menu is open.
+
+While the menu is open, the window procedure hook also swallows mouse buttons,
+`WM_MOUSEWHEEL`, `WM_INPUT`, and key messages. That keeps a click or a scroll
+in the wheel away from the game, because the game reads this input only from
+window messages. In the x64 `inputsystem.dll`:
+
+- `CInputSystem::AttachToWindow` (`inputsystem.dll+0x1DB0`) subclasses the game
+  window with `SetWindowLongPtrW`;
+- its window procedure (`+0x3930`) turns `WM_LBUTTONDOWN` through
+  `WM_XBUTTONDBLCLK` into button events, and `WM_MOUSEWHEEL` into a press and
+  release of the wheel-up or wheel-down button;
+- mouse movement arrives as `WM_INPUT`, read with `GetRawInputData`, which the
+  module resolves at runtime instead of importing.
+
+Our procedure is installed later, so it sees every message first. No game
+module polls the mouse: the only `GetAsyncKeyState` use is a debug pause loop
+in `engine.dll` (`+0x211BC0`) that reads the R, Q, and S keys.
+
+The DLL's own features are another matter. Bunny hop, the triggerbot, and the
+aimbot read Space, Shift, and the left button with `GetAsyncKeyState`, which
+reports the physical key whatever the window procedure does. `CreateMove`
+therefore skips all three while the menu is open.
 
 `features::Menu` treats a gap of more than 100 ms between two drawn frames as a
 reopen and replays the sweep.
@@ -243,28 +262,41 @@ Two rules shaped this module:
 
 ImGui's DX9 backend creates its vertex buffer, index buffer, and font texture in
 `D3DPOOL_DEFAULT`. `IDirect3DDevice9::Reset` fails while any `D3DPOOL_DEFAULT`
-resource exists, and the game resets the device when you change resolution or
-alt-tab out of fullscreen. If nothing releases ImGui's resources first, a reset
-with the overlay loaded can leave the game unable to recover its device.
+resource exists. If nothing releases ImGui's resources first, a reset with the
+overlay loaded can leave the game unable to recover its device.
 
-The game may not be on a plain D3D9 device. In both architectures,
-`shaderapidx9.dll` has no static `d3d9.dll` import. Instead it holds the
-strings `d3d9.dll`, `Direct3DCreate9Ex`, and `Direct3DCreate9` for a runtime
-lookup, next to a `-nod3d9ex` launch option and a `mat_supports_d3d9ex` ConVar.
-So it can create a D3D9Ex device, which also has `ResetEx`. Which one it
-creates on a given system has not been checked in the game, so the fix hooks
-both:
+The x64 `shaderapidx9.dll` shows which device the game creates and when it
+resets it:
 
-| Method | Interface | Slot | Address source |
-| --- | --- | ---: | --- |
-| `Reset` | `IDirect3DDevice9` | 16 | the existing dummy D3D9 device |
-| `ResetEx` | `IDirect3DDevice9Ex` | 132 | a throwaway D3D9Ex device from `GetD3D9ExSlots` |
+| Step | Function | Evidence |
+| --- | --- | --- |
+| Factory | `shaderapidx9.dll+0x29860` | loads `d3d9.dll` and calls `Direct3DCreate9Ex(32)`, keeping it unless `-nod3d9ex` is set or `-dxlevel` is below 90; otherwise `Direct3DCreate9(32)` |
+| Device | `+0x2A6F0` | factory slot 16, `CreateDevice`, on that factory; never `CreateDeviceEx` |
+| Present | `+0x2AB90` | device slots 42 (`EndScene`) and 17 (`Present`); `D3DERR_DEVICELOST` from `Present` marks the device lost |
+| Reset | `+0x28430` | device slot 16 (`Reset`) to recover a lost device or to resize the window, each after the game's own `ReleaseResources` (`+0x2B140`) |
 
-Both detours call `ImGui_ImplDX9_InvalidateDeviceObjects` and then the original.
+No code in the module calls `ResetEx` (slot 132) on the device, so the DLL
+hooks only `Reset`. Without launch options the game takes the D3D9Ex path.
+`mat_supports_d3d9ex` does not choose it: it is a hidden ConVar (default `0`)
+that the factory function sets to `1` whenever `Direct3DCreate9Ex` succeeds.
+
+On the D3D9Ex path the steady-state check skips `TestCooperativeLevel`, so a
+reset starts from a window resize, or from a `D3DERR_DEVICELOST` returned by
+`Present`. Microsoft documents that D3D9Ex devices are not lost on ordinary
+focus changes, so alt-tab probably resets only on the plain D3D9 path. A
+resolution or window-size change is the reliable way to exercise the hook.
+
+The hooked `Reset` and `EndScene` come from a dummy device made with
+`Direct3DCreate9`, while the game's device comes from the D3D9Ex factory.
+Startup therefore also builds a throwaway device the way the game does
+(`GetExFactorySlots`) and logs whether its `Reset` and `EndScene` entries are
+the hooked ones. The `EndScene` hook worked in the x64 smoke test, and the
+saved launch options do not disable D3D9Ex, so the entries are probably shared.
+The log settles it.
+
+`hkReset` calls `ImGui_ImplDX9_InvalidateDeviceObjects` and then the original.
 Recreating the objects needs no code: ImGui's `NewFrame` rebuilds the font
-texture when it is missing, and the render call rebuilds the buffers. If an Ex
-device's `Reset` entry is a different function from the plain device's, startup
-logs it instead of assuming.
+texture when it is missing, and the render call rebuilds the buffers.
 
 ### 7.2 Settings file and draw order
 
@@ -311,14 +343,17 @@ after any drawing change.
 Verified:
 
 - the polar geometry, through `tests/wheel_tests.cpp`;
-- the drawing, through preview screenshots of every scene.
+- the drawing, through preview screenshots of every scene;
+- statically, in the 2026-09-20 x64 binaries, the game's input path
+  (section 5) and its device creation and reset calls (section 7.1).
 
 Not verified yet, and needed before relying on it:
 
 - an MSVC build of the DLL (the wheel code has only been compiled with GCC);
 - clicking, scrolling, and toggling in the game;
-- a device reset with the overlay loaded (resolution change, alt-tab from
-  fullscreen), and whether the game's device is D3D9 or D3D9Ex;
+- a device reset with the overlay loaded (a resolution or window-size change),
+  and the startup line that reports whether the D3D9Ex factory device shares
+  the hooked `Reset` and `EndScene`;
 - display scaling: the wheel is designed at 1080p in fixed pixels, so at 4K it
   is small and at 720p it is large.
 

@@ -305,8 +305,7 @@ Slots verified for the sample x64 build, counting from zero:
 | `VGUI_Surface030` | `SetCursor` | 51 | section 6.3 |
 | `VGUI_Surface030` | `UnlockCursor` / `LockCursor` | 61 / 62 | section 6.3 |
 | `VGUI_Surface030` | `CalculateMouseVisible` / `IsCursorLocked` | 93 / 104 | section 6.3 |
-| `IDirect3DDevice9` | `Reset` / `EndScene` | 16 / 42 | D3D9 ABI; `Reset` in chapter 007 |
-| `IDirect3DDevice9Ex` | `ResetEx` | 132 | D3D9 ABI, chapter 007 |
+| `IDirect3DDevice9` | `Reset` / `EndScene` | 16 / 42 | D3D9 ABI; `shaderapidx9.dll` calls both (chapter 007, section 7.1) |
 
 A slot number can stay the same while the vtable address and every entry
 change. These are evidence for the sample build, not universal constants.

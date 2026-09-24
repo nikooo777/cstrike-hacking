@@ -437,8 +437,14 @@ aidocs/007 holds the design and the reasoning:
   unless `NOMINMAX` comes first (as in `memory/mem.cpp`). A Linux-only build
   of the pure code will not catch them.
 - ImGui's DX9 objects live in `D3DPOOL_DEFAULT` and must be released before a
-  device reset. The `Reset` and `ResetEx` hooks do this; any new
-  `D3DPOOL_DEFAULT` resource must be released there too (007 section 7.1).
+  device reset. The `Reset` hook does this; any new `D3DPOOL_DEFAULT`
+  resource must be released there too. The game creates its device through a
+  D3D9Ex factory but only ever calls `Reset`, never `ResetEx`
+  (007 section 7.1).
+- The game reads mouse and keyboard input only from window messages, so the
+  window procedure hook keeps menu input away from it. `GetAsyncKeyState`
+  sees the physical key regardless, so any feature that polls it must skip
+  its work while the menu is open, as `CreateMove` does (007 section 5).
 - The embedded fonts are under the SIL Open Font License; keep
   `ui/fonts/OFL.txt` beside them. MSVC caps a concatenated string literal at
   65,535 bytes, so a larger font must be split into several arrays.
@@ -457,7 +463,7 @@ aidocs/007 holds the design and the reasoning:
 | All candidate targets are invisible | EngineTrace interface/slot, Ray_t/CGameTrace ABI, filter entity basis, or trace timing is wrong. |
 | View angles are zero | Wrong interface/slot or an obsolete ClientState overlay. |
 | Menu opens but the cursor is pinned | The engine relocked `VGUI_Surface030` and reactivated first-person input; verify surface slots 61/62/93/104 and the `LockCursor` hook. |
-| The game cannot recover after a resolution change | A `D3DPOOL_DEFAULT` resource outlived the reset, or the device's `Reset`/`ResetEx` entry is not the hooked one; check the startup log (aidocs/007 section 7.1). |
+| The game cannot recover after a resolution change | A `D3DPOOL_DEFAULT` resource outlived the reset, or the game's device does not share the hooked `Reset`; check the startup line about the D3D9Ex factory device (aidocs/007 section 7.1). |
 | x86 works and x64 does not | Wrong profile was copied, a pointer was truncated, a metadata layout was reused, or an ABI branch is missing. |
 | ESP projection is mirrored/off-screen | Matrix order, coordinate convention, viewport scaling, or clip-space handling is wrong. |
 

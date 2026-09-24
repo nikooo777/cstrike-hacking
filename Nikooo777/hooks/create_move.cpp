@@ -58,11 +58,15 @@ bool hkCreateMove(void *thisPtr, float flInputSampleTime, CUserCmd *userCmd) {
     // Camera intent after the game filled the command; sim features may diverge.
     const Vector3 intendedCamera = userCmd->viewangles;
 
-    features::Bhop(userCmd);
-    features::Triggerbot(userCmd);
+    // These read physical keys, which the menu's message filter cannot hide.
+    const bool menuOpen = features::GetConfig().menuOpen;
+    if (!menuOpen) {
+        features::Bhop(userCmd);
+        features::Triggerbot(userCmd);
+    }
 
     bool aimbotApplied = false;
-    if ((GetAsyncKeyState(VK_LBUTTON) & BUTTON_DOWN) &&
+    if (!menuOpen && (GetAsyncKeyState(VK_LBUTTON) & BUTTON_DOWN) &&
         features::GetConfig().aimbot) {
         aimbotApplied = features::Aimbot(userCmd);
     }

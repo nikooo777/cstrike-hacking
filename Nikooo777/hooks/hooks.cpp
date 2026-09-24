@@ -24,7 +24,6 @@ OverrideViewFn originalOverrideView = nullptr;
 LockCursorFn originalLockCursor = nullptr;
 EndSceneFn originalEndScene = nullptr;
 ResetFn originalReset = nullptr;
-ResetExFn originalResetEx = nullptr;
 #if ARCH_X64()
 ClientFireBulletsFn originalClientFireBullets = nullptr;
 UpdateAccuracyPenaltyFn originalUpdateAccuracyPenalty = nullptr;
@@ -35,9 +34,6 @@ namespace {
 // IClientMode::CreateMove is vtable index 21 on this CS:S client build.
 constexpr std::size_t kCreateMoveVtableIndex = 21;
 constexpr std::size_t kOverrideViewVtableIndex = 16;
-// IDirect3DDevice9::Reset and EndScene are vtable indexes 16 and 42.
-constexpr std::size_t kResetVtableIndex = 16;
-constexpr std::size_t kEndSceneVtableIndex = 42;
 
 void *GetCreateMoveAddress(ClientMode *clientMode) {
     return mem::GetVirtual<void *>(clientMode, kCreateMoveVtableIndex);
@@ -174,14 +170,19 @@ DWORD __stdcall MainThread(void *pModule) {
     }
     void *endSceneAddress = d3d9Device[kEndSceneVtableIndex];
     void *resetAddress = d3d9Device[kResetVtableIndex];
-    const D3D9ExSlots exSlots = GetD3D9ExSlots();
-    void *resetExAddress = exSlots.resetEx;
     std::cout << "EndScene: 0x" << std::hex << endSceneAddress
-              << " Reset: 0x" << resetAddress << " ResetEx: 0x"
-              << resetExAddress << std::dec << std::endl;
-    if (exSlots.reset != nullptr && exSlots.reset != resetAddress) {
-        std::cout << "D3D9Ex Reset differs from D3D9 Reset; only the D3D9 one "
-                     "is hooked"
+              << " Reset: 0x" << resetAddress << std::dec << std::endl;
+    const ExFactorySlots exFactory = GetExFactorySlots();
+    if (exFactory.reset == nullptr) {
+        std::cout << "D3D9Ex factory device unavailable" << std::endl;
+    } else if (exFactory.reset != resetAddress ||
+               exFactory.endScene != endSceneAddress) {
+        std::cout << "D3D9Ex factory device differs: EndScene: 0x" << std::hex
+                  << exFactory.endScene << " Reset: 0x" << exFactory.reset
+                  << std::dec << "; only the D3D9 entries are hooked"
+                  << std::endl;
+    } else {
+        std::cout << "D3D9Ex factory device shares EndScene and Reset"
                   << std::endl;
     }
 
@@ -202,12 +203,6 @@ DWORD __stdcall MainThread(void *pModule) {
         MH_CreateHook(resetAddress, (LPVOID)&hkReset,
                       reinterpret_cast<LPVOID *>(&originalReset)) != MH_OK) {
         return 1;
-    }
-    if (resetExAddress != nullptr &&
-        MH_CreateHook(resetExAddress, (LPVOID)&hkResetEx,
-                      reinterpret_cast<LPVOID *>(&originalResetEx)) != MH_OK) {
-        std::cout << "ResetEx hook failed" << std::endl;
-        resetExAddress = nullptr;
     }
 #if ARCH_X64()
     if (clientFireBulletsAddress != nullptr &&
@@ -234,10 +229,6 @@ DWORD __stdcall MainThread(void *pModule) {
         MH_EnableHook(endSceneAddress) != MH_OK ||
         MH_EnableHook(resetAddress) != MH_OK) {
         return 1;
-    }
-    if (resetExAddress != nullptr && MH_EnableHook(resetExAddress) != MH_OK) {
-        std::cout << "ResetEx hook could not be enabled" << std::endl;
-        resetExAddress = nullptr;
     }
 #if ARCH_X64()
     if (clientFireBulletsAddress != nullptr &&
@@ -278,9 +269,6 @@ DWORD __stdcall MainThread(void *pModule) {
     MH_DisableHook(lockCursorAddress);
     MH_DisableHook(endSceneAddress);
     MH_DisableHook(resetAddress);
-    if (resetExAddress != nullptr) {
-        MH_DisableHook(resetExAddress);
-    }
 #if ARCH_X64()
     if (clientFireBulletsAddress != nullptr) {
         MH_DisableHook(clientFireBulletsAddress);

@@ -214,12 +214,6 @@ HRESULT __stdcall hkReset(IDirect3DDevice9 *device,
     return originalReset(device, parameters);
 }
 
-HRESULT __stdcall hkResetEx(void *device, D3DPRESENT_PARAMETERS *parameters,
-                            void *fullscreenMode) {
-    ReleaseDeviceObjects();
-    return originalResetEx(device, parameters, fullscreenMode);
-}
-
 HRESULT __stdcall hkEndScene(IDirect3DDevice9 *device) {
     features::telemetry::CountCall(features::telemetry::Hook::EndScene);
     PollMenuToggle();

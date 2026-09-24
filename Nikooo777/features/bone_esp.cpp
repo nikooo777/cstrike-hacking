@@ -68,7 +68,7 @@ void DrawBoneEsp(float viewportX, float viewportY, float viewportWidth,
         return;
     }
 
-    ImDrawList *drawList = ImGui::GetForegroundDrawList();
+    ImDrawList *drawList = ImGui::GetBackgroundDrawList();
     std::vector<int> parents;
     std::vector<Vector3> positions;
     for (int playerIndex = 1; playerIndex < MAXPLAYERS; ++playerIndex) {

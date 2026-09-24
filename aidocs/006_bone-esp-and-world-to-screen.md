@@ -6,8 +6,8 @@ offsets; it is to show how to drill from an engine interface to a studio model,
 establish the pointer basis for cached transforms, and prove the projection
 math before drawing anything.
 
-The implementation is an x64-first pass for the current Counter-Strike: Source
-build. The x86 DLL compiles, but the RenderView and ModelInfo paths still need
+The implementation targets the x64 Counter-Strike: Source build first. The x86
+DLL compiles, but the RenderView and ModelInfo paths still need
 their own Ghidra and runtime validation before the feature should be enabled in
 the x86 profile.
 
@@ -58,7 +58,7 @@ bone index is not a stable semantic relationship by itself.
 
 ## 2. Select the correct Ghidra program
 
-For this pass the relevant programs are:
+The relevant programs are:
 
 | Binary | Ghidra program | Language | Image base |
 | --- | --- | --- | ---: |
@@ -150,9 +150,8 @@ process, and every matrix element must be finite before the result is accepted.
 
 ### 3.3 The `CViewSetup` overlay must be complete
 
-The first implementation copied only the common fields through `angles` at
-`+0x4C`. That is sufficient for the existing visual no-recoil hook, but it is
-not sufficient for `GetMatricesForView`. Ghidra's `FUN_1800D5580` reads the
+An overlay that stops at `angles` (`+0x4C`) is enough for the visual no-recoil
+hook, but not for `GetMatricesForView`. Ghidra's `FUN_1800D5580` reads the
 camera setup at `+0x58`, `+0x5C`, `+0x60`, `+0x64`, `+0x68`, `+0x6C`,
 `+0x70`, `+0x74`, `+0x78`, `+0x7C`, `+0x80`, `+0x84`, `+0x85`, `+0x86`, and
 the override matrix at `+0x88`.
@@ -170,10 +169,10 @@ The matching SDK `CViewSetup` layout confirms these fields:
 | post-processing/cache/override flags | `0x84..0x86` |
 | view-to-projection override matrix | `0x88` |
 
-The local overlay now includes those fields and asserts a total size of
-`0xC8`. This is a general reversal lesson: a structure can appear correct
-when an earlier hook reads one field, yet still be invalid for a later callee
-that consumes the rest of the object.
+The local overlay includes those fields and asserts a total size of `0xC8`.
+This is a general reversal lesson: a structure can appear correct when an
+earlier hook reads one field, yet still be invalid for a later callee that
+consumes the rest of the object.
 
 ## 4. Drill `VModelInfoClient006`
 
@@ -368,15 +367,15 @@ OverrideView
 EndScene
   -> poll Insert, initialize ImGui on the first call
   -> start the ImGui frame
-  -> if the menu is open, submit the menu window
+  -> if the menu is open, submit the menu wheel
   -> read the D3D viewport and call the ESP, which returns early when disabled
   -> render ImGui
   -> call the original EndScene
 ```
 
-The menu is submitted first, but the skeleton goes to ImGui's foreground draw
-list, so it renders above the menu window. The ESP runs whether or not the menu
-is open.
+The menu is submitted first, but the skeleton goes to ImGui's background draw
+list, which renders beneath every window, so the menu wheel (chapter 007) stays
+readable over it. The ESP runs whether or not the menu is open.
 
 The code does not assume that `OverrideView`, `EndScene`, and `CreateMove` run
 on the same thread. The view snapshot and the ESP diagnostics are copied under
@@ -395,9 +394,9 @@ disconnect, or any other stretch without world rendering reports
 `view=unavailable` instead of projecting through the last camera of the old
 session.
 
-The original D3D9 call remains part of the hook. Device reset/lost-device
-handling and window-procedure restoration remain general overlay concerns and
-must be rechecked if the renderer changes.
+The original D3D9 call remains part of the hook. Chapter 007 section 7.1 adds
+the device reset handling. Window-procedure restoration remains a general
+overlay concern and must be rechecked if the renderer changes.
 
 ### 8.1 Select and draw candidates
 
@@ -453,7 +452,7 @@ name=VEngineRenderView014
 name=VModelInfoClient006
 ```
 
-The defaults stay false until runtime validation is complete. The menu checkbox
+The defaults stay false until runtime validation is complete. The menu toggle
 can enable the feature for a local test session without making injection depend
 on it. If either interface or any pointer chain fails, the diagnostic reports
 the failure and draws nothing.
@@ -464,7 +463,8 @@ Build and load the architecture-matched DLL, then use the following order:
 
 1. Confirm the normal interface, netvar, ClientState, and bone-cache lines are
    healthy.
-2. Press **Insert**, enable **Bone ESP (experimental)**, and close the menu.
+2. Press **Insert**, click **Visuals**, then **Bone ESP**, and close the menu.
+   With the menu open, **Status**, then **ESP** shows the same stages live.
 3. Press **F1** while an enemy player is present.
 4. Check the Bone ESP line:
 
@@ -480,7 +480,7 @@ Build and load the architecture-matched DLL, then use the following order:
 
    | F1 value | Meaning | Next check |
    | --- | --- | --- |
-   | `enabled=no` | The toggle was off during the last `EndScene` | Enable **Bone ESP (experimental)** |
+   | `enabled=no` | The toggle was off during the last `EndScene` | Enable **Visuals**, then **Bone ESP** in the menu |
    | `viewport=unavailable` | `IDirect3DDevice9::GetViewport` failed or returned an empty viewport | Check the D3D9 device and window state |
    | `view=unavailable` | No `OverrideView` snapshot in the last 500 ms | Confirm the `OverrideView` hook is installed and logged, and that a map is loaded |
    | `matrix=unavailable` | RenderView resolution, slot 50, the call ABI, or matrix validation failed | Section 3 |
@@ -501,9 +501,7 @@ row/column order.
 The x64 local smoke test drew valid enemy skeletons from the cached matrices.
 The bone-cache path it depends on was validated separately (chapter 004,
 section 9.1: readable, usable, `count=50`). No F1 `bone esp:` line was recorded
-for the drawing run. On the next test, capture one along with the candidate,
-hierarchy, and line counts for a known number of enemies, confirm that the lines
-track the targets and the camera, and add both here as the reference result.
+for the drawing run, so there is no reference line yet (section 11).
 
 ## 11. What is and is not proven
 
@@ -524,6 +522,9 @@ Also verified statically for the 2026-09-20 binaries (chapter 004, section
 Still requiring a new reversal or runtime test:
 
 - a runtime smoke test on the 2026-09-20 binaries;
+- a recorded F1 `bone esp:` reference line, with the candidate, hierarchy, and
+  line counts for a known number of enemies, and lines that track the targets
+  and the camera;
 - x86 RenderView/ModelInfo slots and their calling conventions;
 - cache freshness at every renderer state, and device-reset behavior;
 - visibility, interpolation, and server-authoritative hitbox semantics;

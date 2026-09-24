@@ -7,12 +7,14 @@
 #include "features/config.h"
 #include "features/bone_esp.h"
 #include "features/menu.h"
+#include "features/telemetry.h"
 #include "hooks/d3d9_device.h"
 #include "imgui.h"
 #include "imgui_impl_dx9.h"
 #include "imgui_impl_win32.h"
 #include "game/interfaces.h"
 #include "sdk/vgui_surface.h"
+#include "ui/theme.h"
 
 extern LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
@@ -143,7 +145,12 @@ void InitImGui(IDirect3DDevice9 *device) {
     }
 
     ImGui::CreateContext();
+    ImGuiIO &io = ImGui::GetIO();
+    io.IniFilename = nullptr;
+    io.LogFilename = nullptr;
     ImGui::StyleColorsDark();
+    ui::theme::ApplyStyle(ImGui::GetStyle());
+    ui::theme::LoadFonts(io);
     const bool win32Initialized = ImGui_ImplWin32_Init(g_gameHwnd);
     const bool dx9Initialized = ImGui_ImplDX9_Init(device);
     if (!win32Initialized || !dx9Initialized) {
@@ -190,9 +197,31 @@ void ShutdownImGui() {
     g_imguiInit = false;
 }
 
+void ReleaseDeviceObjects() {
+    if (g_imguiInit) {
+        ImGui_ImplDX9_InvalidateDeviceObjects();
+    }
+}
+
 } // namespace
 
+// ImGui's DX9 backend keeps D3DPOOL_DEFAULT buffers and its font texture;
+// Reset fails while such resources exist. Release them first; NewFrame
+// recreates them on the next frame after a successful reset.
+HRESULT __stdcall hkReset(IDirect3DDevice9 *device,
+                          D3DPRESENT_PARAMETERS *parameters) {
+    ReleaseDeviceObjects();
+    return originalReset(device, parameters);
+}
+
+HRESULT __stdcall hkResetEx(void *device, D3DPRESENT_PARAMETERS *parameters,
+                            void *fullscreenMode) {
+    ReleaseDeviceObjects();
+    return originalResetEx(device, parameters, fullscreenMode);
+}
+
 HRESULT __stdcall hkEndScene(IDirect3DDevice9 *device) {
+    features::telemetry::CountCall(features::telemetry::Hook::EndScene);
     PollMenuToggle();
     SetMenuInputMode(features::GetConfig().menuOpen);
     InitImGui(device);

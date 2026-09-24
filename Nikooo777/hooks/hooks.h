@@ -16,6 +16,9 @@ using CreateMoveFn = bool(ARCH_THISCALL *)(void *, float, CUserCmd *);
 using OverrideViewFn = void(ARCH_THISCALL *)(void *, CViewSetup *);
 using LockCursorFn = void(ARCH_THISCALL *)(void *);
 using EndSceneFn = HRESULT(__stdcall *)(IDirect3DDevice9 *);
+using ResetFn = HRESULT(__stdcall *)(IDirect3DDevice9 *, D3DPRESENT_PARAMETERS *);
+// IDirect3DDevice9Ex::ResetEx(present parameters, D3DDISPLAYMODEEX *).
+using ResetExFn = HRESULT(__stdcall *)(void *, D3DPRESENT_PARAMETERS *, void *);
 #if ARCH_X64()
 using ClientFireBulletsFn = void (*)(int, const Vector3 *, const Vector3 *,
                                      int, int, int, float, float, float);
@@ -26,6 +29,8 @@ extern CreateMoveFn originalCreateMove;
 extern OverrideViewFn originalOverrideView;
 extern LockCursorFn originalLockCursor;
 extern EndSceneFn originalEndScene;
+extern ResetFn originalReset;
+extern ResetExFn originalResetEx;
 #if ARCH_X64()
 extern ClientFireBulletsFn originalClientFireBullets;
 extern UpdateAccuracyPenaltyFn originalUpdateAccuracyPenalty;
@@ -50,6 +55,10 @@ void hkClientFireBullets(int playerIndex, const Vector3 *origin,
 void hkUpdateAccuracyPenalty(void *weapon);
 #endif
 HRESULT __stdcall hkEndScene(IDirect3DDevice9 *device);
+HRESULT __stdcall hkReset(IDirect3DDevice9 *device,
+                          D3DPRESENT_PARAMETERS *parameters);
+HRESULT __stdcall hkResetEx(void *device, D3DPRESENT_PARAMETERS *parameters,
+                            void *fullscreenMode);
 void ShutdownEndScene();
 
 // Lifecycle: install hooks, run until END, then tear down.

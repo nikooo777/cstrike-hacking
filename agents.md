@@ -19,7 +19,7 @@ Keep these three layers in agreement:
 | --- | --- |
 | `config/signatures.ini` and `config/signatures-x64.ini` | Architecture-specific patterns, operand decoding, feature defaults, and provenance. |
 | `Nikooo777/` | Resolvers, ABI declarations, checked memory access, hooks, and features. |
-| `aidocs/001` through `aidocs/006` | The evidence-based tutorial narrative: how a value was found and why the implementation uses it. |
+| `aidocs/001` through `aidocs/007` | The evidence-based tutorial narrative: how a value was found and why the implementation uses it. |
 
 The x64 profile is selected by `CMAKE_SIZEOF_VOID_P` in `CMakeLists.txt` and
 copied beside the built DLL as `signatures.ini`. Do not edit only the copied
@@ -37,9 +37,10 @@ The current architecture split is intentional:
 The relevant chapters are [001: signatures](aidocs/001_signature-scanning-and-offsets.md),
 [002: netvars](aidocs/002_netvars-and-entity-offsets.md),
 [003: globals and input](aidocs/003_global-addresses-and-inputs.md),
-[004: x64 migration](aidocs/004_x64-migration-and-abi.md), and
+[004: x64 migration](aidocs/004_x64-migration-and-abi.md),
 [005: no-spread / weapon accuracy](aidocs/005_no-spread-and-weapon-accuracy.md),
-and [006: Bone ESP / world-to-screen](aidocs/006_bone-esp-and-world-to-screen.md).
+[006: Bone ESP / world-to-screen](aidocs/006_bone-esp-and-world-to-screen.md),
+and [007: the menu wheel](aidocs/007_weapon-wheel-menu.md).
 Add a new numbered chapter when a reversal becomes a tutorial step; update this
 handoff when the result is a reusable rule for later work.
 
@@ -247,8 +248,8 @@ replacement for every private/client-only value:
   member inside a nested object, or a pointer target.
 
 Dormancy is not a guessed field on x64: it is queried through
-`IClientNetworkable::IsDormant`. An old hardcoded stub that silently marked
-every entity dormant is how that rule was learned (aidocs/004 section 9.2).
+`IClientNetworkable::IsDormant`. A placeholder that reports every entity as
+dormant silently invalidates every target (aidocs/004 section 9.2).
 
 ### Establish the pointer basis before translating a displacement
 
@@ -412,7 +413,35 @@ checked game data -> world-to-screen projection -> render-stage drawing
   `candidates`, `hierarchies`, `projectedLines` (006 section 10).
 - Keep `EndScene` work to one pass over the player slots with block reads. Do
   not scan signatures or call `SetupBones` there. Preserve the original device
-  call, and account for device reset and window-procedure restoration.
+  call, and account for window-procedure restoration.
+- Draw ESP on ImGui's background draw list, beneath the menu wheel.
+
+## Menu wheel and overlay: rules
+
+aidocs/007 holds the design and the reasoning:
+
+- `ui/` is pure: ImGui only, with no game, hook, or config includes. The
+  feature layer (`features/menu.cpp`) builds a `WheelModel` from the config
+  and telemetry each frame and applies the returned click. This is what lets
+  `tests/wheel_tests.cpp` and `tools/wheel_preview` exercise the real code.
+- Status data reaches the menu only through `features/telemetry`: atomic
+  counters, a startup record, and mutex-protected copies. Never call a
+  resolver from `EndScene` for a status line, and route actions that touch
+  game objects back to the game thread (the Dump item sets a flag that
+  `CreateMove` consumes).
+- Render a UI change with `wheel_preview` and look at every scene before
+  building the DLL. The rasterizer is a review tool, not a pixel-exact
+  reproduction of the GPU.
+- Avoid Win32 macro names in any file that can see `Windows.h`: `DrawText`,
+  `near`, `far`, `CreateWindow`, `LoadImage`, `GetObject`, and `min`/`max`
+  unless `NOMINMAX` comes first (as in `memory/mem.cpp`). A Linux-only build
+  of the pure code will not catch them.
+- ImGui's DX9 objects live in `D3DPOOL_DEFAULT` and must be released before a
+  device reset. The `Reset` and `ResetEx` hooks do this; any new
+  `D3DPOOL_DEFAULT` resource must be released there too (007 section 7.1).
+- The embedded fonts are under the SIL Open Font License; keep
+  `ui/fonts/OFL.txt` beside them. MSVC caps a concatenated string literal at
+  65,535 bytes, so a larger font must be split into several arrays.
 
 ## Common symptoms and likely causes
 
@@ -428,6 +457,7 @@ checked game data -> world-to-screen projection -> render-stage drawing
 | All candidate targets are invisible | EngineTrace interface/slot, Ray_t/CGameTrace ABI, filter entity basis, or trace timing is wrong. |
 | View angles are zero | Wrong interface/slot or an obsolete ClientState overlay. |
 | Menu opens but the cursor is pinned | The engine relocked `VGUI_Surface030` and reactivated first-person input; verify surface slots 61/62/93/104 and the `LockCursor` hook. |
+| The game cannot recover after a resolution change | A `D3DPOOL_DEFAULT` resource outlived the reset, or the device's `Reset`/`ResetEx` entry is not the hooked one; check the startup log (aidocs/007 section 7.1). |
 | x86 works and x64 does not | Wrong profile was copied, a pointer was truncated, a metadata layout was reused, or an ABI branch is missing. |
 | ESP projection is mirrored/off-screen | Matrix order, coordinate convention, viewport scaling, or clip-space handling is wrong. |
 

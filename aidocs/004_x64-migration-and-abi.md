@@ -1,7 +1,7 @@
 # 004 - Porting the experiment from x86 to x64
 
-This chapter records the first x64 pass against the updated Counter-Strike:
-Source client. It covers what changes when the pointer size changes, how each
+This chapter ports the experiment to the updated x64 Counter-Strike: Source
+client. It covers what changes when the pointer size changes, how each
 x86 result was re-found in the x64 binaries, and which ABI details are easy to
 get subtly wrong. It is tied to the binaries that were on disk at the time,
 not a claim that one set of offsets survives every update. Section 11
@@ -75,8 +75,7 @@ continuing to inspect or launch the old 32-bit module set.
 
 Create a separate Ghidra project, or at least separate program imports. Do not
 reuse the old x86 program's addresses, data types, or structure overlays
-because a symbol or interface has the same name. For this pass the useful
-programs were:
+because a symbol or interface has the same name. The programs used here are:
 
 | Program | Ghidra path | Image base | Language |
 | --- | --- | ---: | --- |
@@ -306,7 +305,8 @@ Slots verified for the sample x64 build, counting from zero:
 | `VGUI_Surface030` | `SetCursor` | 51 | section 6.3 |
 | `VGUI_Surface030` | `UnlockCursor` / `LockCursor` | 61 / 62 | section 6.3 |
 | `VGUI_Surface030` | `CalculateMouseVisible` / `IsCursorLocked` | 93 / 104 | section 6.3 |
-| `IDirect3DDevice9` | `EndScene` | 42 | D3D9 ABI |
+| `IDirect3DDevice9` | `Reset` / `EndScene` | 16 / 42 | D3D9 ABI; `Reset` in chapter 007 |
+| `IDirect3DDevice9Ex` | `ResetEx` | 132 | D3D9 ABI, chapter 007 |
 
 A slot number can stay the same while the vtable address and every entry
 change. These are evidence for the sample build, not universal constants.
@@ -383,7 +383,7 @@ still concludes that no UI needs the mouse. On a later frame it locks the
 cursor and reactivates first-person mouse input. That explains why the arrow
 can be visible while staying pinned to the center of the game window.
 
-The exact `vguimatsurface.dll` binaries used for this pass are:
+The exact `vguimatsurface.dll` binaries used here are:
 
 | Architecture | SHA-256 |
 | --- | --- |
@@ -477,10 +477,10 @@ register values, corrupted home space, or a crash after the hook returns.
 
 ### 7.1 Small non-trivial by-value parameters: `CBaseHandle`
 
-A parameter's size alone does not decide how it is passed. The first
-implementation declared the handle-taking entity-list virtuals as accepting
-`std::uint32_t`, because the stored `m_hActiveWeapon` value is four bytes. That
-is wrong on MSVC x64.
+A parameter's size alone does not decide how it is passed. The stored
+`m_hActiveWeapon` value is four bytes, so it is tempting to declare the
+handle-taking entity-list virtuals as accepting `std::uint32_t`. That is wrong
+on MSVC x64.
 
 In the matching Source SDK, `CBaseHandle` is a four-byte class with
 user-defined constructors and copy operations, and
@@ -505,8 +505,8 @@ CALL qword ptr [RAX + 0x10]    ; GetClientUnknownFromHandle
 
 `RDX` points at a `CBaseHandle` temporary. The SDK-shaped declaration in
 `sdk/client_entity_list.h` mirrors the real non-trivial class and asserts its
-four-byte size, which preserves that ABI. The integer declaration failed
-quietly: the handle was read successfully while every lookup returned null. A
+four-byte size, which preserves that ABI. An integer declaration fails
+quietly: the handle is read successfully while every lookup returns null. A
 log such as `handle=0x01390146 index=0x146` therefore proves only that the
 field read worked. The resolution has succeeded only once `weapon=0x...` and
 `methodsOk=yes` are reported (chapter 005, section 11).
@@ -603,9 +603,10 @@ here because ASLR changes them between launches.
 
 ### 9.2 Dormancy through `IClientNetworkable`
 
-A valid bone cache is not enough for target selection. The first x64 profile
-deliberately set `aimbot=false`, and its placeholder `m_bDormant()` returned
-`true` for every entity, so `IsValidTarget()` rejected all players by design.
+A valid bone cache is not enough for target selection: `IsValidTarget()` also
+rejects dormant entities, so dormancy needs its own verified source. A
+placeholder that reports every entity as dormant makes every player invalid
+without any visible error.
 
 The x86 dormant member is not reused on x64. For this build the semantic path
 is the client networkable interface. The x64 entity-list wrapper at
@@ -615,7 +616,7 @@ declaration places `IClientNetworkable::IsDormant` at slot 8. The runtime
 validates both vtable function addresses, calls those two methods, and fails
 closed if either interface cannot be resolved.
 
-With that path in place the x64 profile enables the aimbot again. The F1 dump
+With that path in place the x64 profile enables the aimbot. The F1 dump
 reports the resolver state plus the number of valid targets and readable
 bone-14 matrices, which separates target filtering from angle application
 during testing.

@@ -33,10 +33,10 @@ This is a teaching codebase tied to one Counter-Strike: Source client build. It 
 | Silent angles | `CreateMove` return value | Prevents compensated command angles from being copied into the render camera. |
 | Visual no-recoil | `ClientMode::OverrideView` | Subtracts punch from the completed camera view without changing player state. |
 | Bone ESP | `EndScene` | Experimental read-only skeleton lines using the verified studio hierarchy, cached bone matrices, and world-to-screen projection; disabled by default. |
-| ImGui menu | `EndScene` + window procedure + `VGUI_Surface030::LockCursor` | `features/menu.cpp` exposes runtime toggles and is opened with **Insert**; the cursor hook prevents the engine from re-locking the mouse while it is open. |
+| Menu wheel | `EndScene` + window procedure + `VGUI_Surface030::LockCursor` | A radial menu around the crosshair, opened with **Insert** (chapter 007). `ui/` draws the categories, toggles, and a readout that explains each item; `features/menu.cpp` connects it to the config flags and to the live hook, setup, shot, and Bone ESP status in `features/telemetry.*`. The cursor hook prevents the engine from re-locking the mouse while it is open. |
 | Debug dump | `CreateMove` / **F1** | Prints resolved state plus command, recoil, spread, fire-time, bone-cache, hierarchy, and projection diagnostics. |
 
-The x86 profile retains the legacy triggerbot experiment, while the x64 profile keeps triggerbot disabled and enables the aimbot after validating `IClientNetworkable::IsDormant`. Both profiles keep perfect no-spread and Bone ESP off by default. The current Bone ESP path is x64-first: Ghidra verifies `VEngineRenderView014::GetMatricesForView` at slot 50, `VModelInfoClient006::GetStudiomodel` at slot 28, and the entity renderable's `GetModel` at slot 9. It reads dynamic studio parent links and the validated x64 `C_BaseAnimating::SetupBones` cache through the renderable subobject (`entity + 0x8`), then projects matrix positions through the captured view. The x64 cache fields are `[this + 0xB40]`/`[this + 0xB50]` on the renderable, translating to a matrix pointer at `entity + 0xB48` and a count at `entity + 0xB58`; the current build reports `count=50`, readable and usable. The F1 dump reports hierarchy, matrix, and projected-line status so an update can be investigated without guessing. The menu itself starts closed. MinHook installs `CreateMove`, `ClientMode::OverrideView`, `VGUI_Surface030::LockCursor`, and D3D9 `EndScene`. The window procedure is replaced separately so **Insert** works even when `CreateMove` is not running.
+The x86 profile retains the legacy triggerbot experiment, while the x64 profile keeps triggerbot disabled and enables the aimbot after validating `IClientNetworkable::IsDormant`. Both profiles keep perfect no-spread and Bone ESP off by default. The current Bone ESP path is x64-first: Ghidra verifies `VEngineRenderView014::GetMatricesForView` at slot 50, `VModelInfoClient006::GetStudiomodel` at slot 28, and the entity renderable's `GetModel` at slot 9. It reads dynamic studio parent links and the validated x64 `C_BaseAnimating::SetupBones` cache through the renderable subobject (`entity + 0x8`), then projects matrix positions through the captured view. The x64 cache fields are `[this + 0xB40]`/`[this + 0xB50]` on the renderable, translating to a matrix pointer at `entity + 0xB48` and a count at `entity + 0xB58`; the current build reports `count=50`, readable and usable. The F1 dump reports hierarchy, matrix, and projected-line status so an update can be investigated without guessing. The menu itself starts closed. MinHook installs `CreateMove`, `ClientMode::OverrideView`, `VGUI_Surface030::LockCursor`, and D3D9 `EndScene` and `Reset` (plus `ResetEx` when a D3D9Ex device can be created, and the two fire-time capture detours on x64). **Insert** is polled in `EndScene`, so it works even when `CreateMove` is not running.
 
 The matrix builder consumes the complete x64 `CViewSetup` layout, not just its `angles` field: the overlay is `0xC8` bytes and includes the near/far planes, aspect/off-center flags, and the override matrix through `+0x88`. This is asserted in `sdk/view_setup.h` and is required for valid world-to-screen output.
 
@@ -44,14 +44,16 @@ The matrix builder consumes the complete x64 `CViewSetup` layout, not just its `
 
 | Key | Action |
 |-----|--------|
-| **INSERT** | Toggle the ImGui menu. |
+| **INSERT** | Open or close the menu wheel. |
 | **F1** | Print the debug dump to the allocated console. |
 | **END** | Disable hooks, restore the window procedure, and unload the DLL. |
 | **Space** | Hold for bunny hop when enabled. |
 | **Shift** | Hold for triggerbot when enabled. |
 | **LMB** | Hold for the aimbot when enabled. |
 
-The menu and optional bone overlay are initialized on the first successful D3D9 `EndScene` call. Once ImGui is initialized, the hook runs a frame whenever drawing is enabled so Bone ESP can render while the menu is closed; the menu window itself is submitted only while open. **Insert** is still handled by the window procedure. While the menu is open, the verified `VGUI_Surface030::LockCursor` hook substitutes `UnlockCursor` and an arrow cursor. The engine then observes the unlocked surface and deactivates first-person mouse recentering through its normal input path. This path has been runtime-validated on x64: the pointer moves freely as soon as the menu opens, without first opening the console or settings.
+With the wheel open, click a category on the outer ring or scroll to change category, then click an item on the inner ring to toggle it. The center explains whatever the pointer is on, and the Status category shows whether each part of the DLL is working.
+
+The menu and optional bone overlay are initialized on the first successful D3D9 `EndScene` call. Once ImGui is initialized, the hook runs a frame whenever drawing is enabled so Bone ESP can render while the menu is closed; the menu wheel itself is submitted only while open. **Insert** is polled at the start of each `EndScene`; the window procedure forwards input to ImGui while the menu is open. While the menu is open, the verified `VGUI_Surface030::LockCursor` hook substitutes `UnlockCursor` and an arrow cursor. The engine then observes the unlocked surface and deactivates first-person mouse recentering through its normal input path. This path has been runtime-validated on x64: the pointer moves freely as soon as the menu opens, without first opening the console or settings.
 
 ## Runtime flow
 
@@ -68,8 +70,9 @@ DllMain (process attach)
 CreateMove          -> buttons, aim, command recoil/spread composition, F1 debug
 OverrideView        -> read-only visual punch removal from the camera view
 LockCursor          -> preserve an unlocked OS cursor while the menu is open
-EndScene            -> optional Bone ESP, then ImGui frame/render
-Window procedure     -> Insert toggle and ImGui input
+EndScene            -> Insert toggle, ImGui frame: menu wheel, optional Bone ESP beneath it
+Reset / ResetEx     -> release ImGui's device objects before the device resets
+Window procedure    -> ImGui input while the menu is open
 END                 -> disable hooks, shut down ImGui, unload the DLL
 ~~~
 
@@ -94,11 +97,12 @@ Nikooo777/
     render_state.*         # final OverrideView snapshot for render features
     player.*               # IsAlive, IsEnemy, IsValidTarget, EyePosition
   hooks/                   # MinHook lifecycle + individual hooks + dummy D3D device
-  features/                # gameplay logic + menu + Bone ESP + F1 dump + fire-time capture + config flags
+  features/                # gameplay logic + menu + Bone ESP + F1 dump + fire-time capture + config flags + telemetry
+  ui/                      # menu wheel geometry, theme, fonts, content, and drawing (ImGui only)
 imgui/                     # Dear ImGui + DX9 / Win32 backends
 minhook/                   # vendored source, headers, license, and legacy x86 libs
 config/                    # architecture-specific signatures, settings, provenance
-tools/                     # build-comparison scripts and the Ghidra byte-export script
+tools/                     # build-comparison scripts, the Ghidra byte-export script, and the offline wheel preview
 ```
 
 ### Layer rules (keep the tutorial readable)
@@ -106,8 +110,9 @@ tools/                     # build-comparison scripts and the Ghidra byte-export
 1. **`sdk/`** — memory layouts and interface stubs. No hooks, no features.
 2. **`game/`** — how we *find* and *read* live objects (signatures, entity list).
 3. **`features/`** — what we *do* with that data. Prefer `game::` helpers over copy-pasted field checks.
-4. **`hooks/`** — only place that installs MinHook / D3D and calls into features.
-5. **`dllmain.cpp`** — attach / detach only.
+4. **`ui/`** — the menu wheel's drawing and fixed content. ImGui only: no game, hook, or config access, so it can be tested and rendered offline.
+5. **`hooks/`** — only place that installs MinHook / D3D and calls into features.
+6. **`dllmain.cpp`** — attach / detach only.
 
 Networked entity members use runtime `RecvTable` accessors (`DEFINE_NETVAR`) so their
 displacements come from the loaded client metadata. Client-only fields live in
@@ -122,7 +127,7 @@ buttons use the named interface/command sources documented in `aidocs/003`.
 
 | Goal | Place |
 |------|--------|
-| New cheat feature | `features/foo.*` → call from `hooks/create_move.cpp` (logic) or `hooks/end_scene.cpp` (draw) → add `.cpp` to `CMakeLists.txt` → optional toggle in `features/config.h` + menu |
+| New cheat feature | `features/foo.*` → call from `hooks/create_move.cpp` (logic) or `hooks/end_scene.cpp` (draw) → add `.cpp` to `CMakeLists.txt` → optional toggle in `features/config.h` + a menu wheel item (`aidocs/007`, section 10) |
 | Networked player / entity field | Resolve and add its `RecvTable` path in `sdk/entity/` with `DEFINE_NETVAR`; document the discovery in `aidocs/002_netvars-and-entity-offsets.md`. |
 | Client-only entity field | Add the offset to `sdk/client_offsets.h` with its aidocs section, after verifying that it is not in a receive table; expose it from `sdk/entity/` with `DEFINE_MEMBER` or read it in `game/`. |
 | Global address or input slot | Prefer a named interface or `CUserCmd`; document a true signature in `aidocs/003_global-addresses-and-inputs.md` when no semantic source exists. |
@@ -202,14 +207,14 @@ x86 build directory when changing pointer size.
 
 ### Offline deterministic tests
 
-Two small architecture-specific test executables cover the pure math.
+Three small architecture-specific test executables cover the pure math.
 `weapon_math_tests` checks the seed derivation, cone replay, command layout, and
 inverse-cone math; `projection_tests` checks the world-to-screen convention used
-by Bone ESP. They do not load the game, resolve signatures, or call game-owned
-interfaces:
+by Bone ESP; `wheel_tests` checks the menu wheel's sectors and hit testing. They
+do not load the game, resolve signatures, or call game-owned interfaces:
 
 ```bat
-cmake --build build-msvc-x64 --target weapon_math_tests projection_tests
+cmake --build build-msvc-x64 --target weapon_math_tests projection_tests wheel_tests
 ctest --test-dir build-msvc-x64 --output-on-failure
 ```
 
@@ -220,6 +225,10 @@ deterministic math and ABI regressions; they do not
 replace a permitted in-game smoke test for signatures, vtables, timing, or
 object lifetimes.
 
+The `wheel_preview` target is not a test. It renders the real menu wheel code
+with sample data to PNG files, in software, so a design change can be reviewed
+without the game. Chapter 007, section 8 shows how to build it on Linux too.
+
 ## Permitted offline smoke test
 
 This repository does not provide a standalone executable, injector, or anti-cheat workaround. For a local test environment you control:
@@ -227,10 +236,11 @@ This repository does not provide a standalone executable, injector, or anti-chea
 1. Build the DLL for the same architecture as the target game process.
 2. Start a permitted offline or local Counter-Strike: Source session.
 3. Load the DLL using an injector you already trust and are authorized to use.
-4. Check the console for `BaseClient`, `Netvars initialized`, `ClientEntityList`, `ClientMode`, `OverrideView`, `CreateMove`, `LockCursor`, and `EndScene` addresses.
-5. Press **F1** to print the module/interface/netvar dump, then **Insert** and confirm the pointer moves freely without another UI being open.
-6. Press **End** to restore hooks and unload cleanly.
-7. Confirm the console shows the loaded config path and the signature provenance/match offsets before treating a resolution as valid.
+4. Check the console for `BaseClient`, `Netvars initialized`, `ClientEntityList`, `ClientMode`, `OverrideView`, `CreateMove`, `LockCursor`, `EndScene`, and `Reset` addresses.
+5. Press **F1** to print the module/interface/netvar dump, then **Insert** and confirm the pointer moves freely without another UI being open. In the wheel, **Status** should show **Hooks** and **Setup** as working.
+6. Change the resolution once, or alt-tab out of fullscreen and back, and confirm the game recovers and the wheel still draws.
+7. Press **End** to restore hooks and unload cleanly.
+8. Confirm the console shows the loaded config path and the signature provenance/match offsets before treating a resolution as valid.
 
 The addresses, offsets, and signatures are build-specific. A successful DLL build does not mean that it is safe to load into a different game binary.
 
@@ -247,7 +257,7 @@ These are the files to revisit when the client build changes:
 | `config/signatures.ini` / `config/signatures-x64.ini` | Architecture-specific patterns, named interfaces, operand decoders, pointer indirections, validation settings, feature defaults, and discovery links. |
 | `game/interfaces.cpp` | `CreateInterface` lookup plus configured entity-list, render/model interfaces, view-matrix retrieval, EngineClient, EngineTrace, ClientState, and ClientMode resolution logic. |
 | `game/model.cpp` / `math/projection.cpp` | Checked studio parent-link lookup and `VMatrix`-convention world-to-screen projection used by the experimental Bone ESP path. |
-| `hooks/hooks.cpp` | Vtable slots for `OverrideView`, `CreateMove`, `VGUI_Surface030::LockCursor`, and `EndScene`. |
+| `hooks/hooks.cpp` / `hooks/d3d9_device.cpp` | Vtable slots for `OverrideView`, `CreateMove`, `VGUI_Surface030::LockCursor`, `EndScene`, `Reset`, and `IDirect3DDevice9Ex::ResetEx`. |
 | `core/constants.h` | Entity stride, player limits, team values, and movement flags. |
 
 The debug dump reports module bases, runtime interface/client-only offsets, resolved netvar offsets, the resolved ClientState address, view angles from `VEngineClient`, the local bone-cache pointer/count, Bone ESP view/matrix/hierarchy/projected-line status, aimbot valid/readable/visible target counts, and the local player position when one is available. If a signature or required netvar is not found, or a read produces null/garbage data, treat the binary and the offsets as mismatched and re-dump them rather than guessing.
@@ -260,6 +270,7 @@ The debug dump reports module bases, runtime interface/client-only offsets, reso
 - [004 - x64 migration and ABI](aidocs/004_x64-migration-and-abi.md)
 - [005 - No-spread and weapon accuracy](aidocs/005_no-spread-and-weapon-accuracy.md)
 - [006 - Bone ESP and world-to-screen projection](aidocs/006_bone-esp-and-world-to-screen.md)
+- [007 - A weapon-wheel menu](aidocs/007_weapon-wheel-menu.md)
 
 The architecture-selected signature profile is the source of truth for the
 runtime signatures and named client/engine interfaces. It intentionally
@@ -280,6 +291,7 @@ provenance fields whenever a new build is reverse-engineered.
 | `EngineTrace interface not found` or all targets are invisible | `EngineTraceClient003`, `TraceRay` slot 4, the `Ray_t`/`CGameTrace` layout, or the entity-skip filter does not match the loaded engine. Re-check the x64 evidence in `aidocs/004`. |
 | `Failed to initialize netvars` | `GetAllClasses`, a required RecvTable, or a required property does not match this client build. Stop and re-check the table path and pointer-width assertions. |
 | D3D9 capture fails or the menu never appears | The code needs a visible, suitably sized game window and a D3D9 device. Wait until the game window is initialized and verify that the target is using D3D9. |
+| The game cannot recover its device after a resolution change or alt-tab | Confirm that startup logged the `Reset` address and hooked it. If it warns that the D3D9Ex `Reset` differs, that entry is not hooked yet; see `aidocs/007`, section 7.1. |
 | The menu opens but the cursor stays pinned to the center | Confirm `VGUI_Surface030` resolves and `LockCursor` is logged. Re-check surface slots 61/62 and the engine `CalculateMouseVisible`/`IsCursorLocked` path documented in `aidocs/004`; a Win32-only cursor change cannot stop Source input recentering. |
 | A feature crashes or reads implausible values | Stop testing: an entity/global offset is stale or the target is not the expected architecture/build. Disable the feature and return to Ghidra. |
 
@@ -291,6 +303,7 @@ provenance fields whenever a new build is reverse-engineered.
 - The aimbot remains intentionally basic: closest visible target, bone 14, and an immediate angle change. It does not implement smoothing, weapon handling, or movement correction; visibility is a client trace approximation and is not a server-side visibility guarantee.
 - The triggerbot is deliberately narrow: it uses the client-only crosshair target ID and requires the local player to be on the ground.
 - Rendering support is D3D9-specific and depends on finding the game's visible top-level window.
+- The menu wheel is laid out in fixed pixels for 1080p, so it is smaller at higher resolutions and larger at lower ones. Its input, and the `Reset`/`ResetEx` handling, have not been tested in the game yet.
 - The deterministic seed/spread math has an offline CTest target; signatures, interfaces, timing, and object lifetimes still require an architecture-matched build followed by a permitted local smoke test.
 - Perfect no-spread is validated only for the documented x64 sample path and remains off by default; the x86 cone path and other weapon branches require their own runtime evidence.
 - Bone ESP is an x64-first read-only experiment and remains off by default; the x86 interface slots, studio layout, cache timing, and projection path require their own Ghidra and runtime validation.

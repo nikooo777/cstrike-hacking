@@ -10,6 +10,7 @@
 #include "features/debug_info.h"
 #include "features/fire_capture.h"
 #include "features/perfect_nospread.h"
+#include "features/telemetry.h"
 #include "features/triggerbot.h"
 #include "math/vector.h"
 #include "sdk/user_cmd.h"
@@ -52,6 +53,8 @@ bool hkCreateMove(void *thisPtr, float flInputSampleTime, CUserCmd *userCmd) {
         return result;
     }
 
+    features::telemetry::CountCall(features::telemetry::Hook::CreateMove);
+
     // Camera intent after the game filled the command; sim features may diverge.
     const Vector3 intendedCamera = userCmd->viewangles;
 
@@ -66,13 +69,15 @@ bool hkCreateMove(void *thisPtr, float flInputSampleTime, CUserCmd *userCmd) {
 
     const auto shotTrace = features::ApplyAimAndFireCorrections(
         userCmd, intendedCamera, userCmd->viewangles, aimbotApplied);
+    features::telemetry::PublishShotTrace(shotTrace);
 #if ARCH_X64()
     features::CaptureClientFireCommand(userCmd, shotTrace);
 #endif
 
     // F1 after mutation so the dump shows final cmd angles / deltas for this tick.
     // Cone prediction uses a local RNG stream and does not reseed vstdlib.
-    if (debugPressed || g_debugPendingForRealCommand) {
+    const bool dumpRequested = features::telemetry::ConsumeDumpRequest();
+    if (debugPressed || g_debugPendingForRealCommand || dumpRequested) {
         features::PrintDebugInfo(userCmd, &shotTrace);
         g_debugPendingForRealCommand = false;
     }

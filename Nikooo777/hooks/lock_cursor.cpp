@@ -2,6 +2,7 @@
 
 #include "core/arch.h"
 #include "features/config.h"
+#include "features/telemetry.h"
 #include "sdk/vgui_surface.h"
 
 namespace hooks {
@@ -11,6 +12,7 @@ void __fastcall hkLockCursor(void *thisPtr, void * /*edx*/) {
 #else
 void hkLockCursor(void *thisPtr) {
 #endif
+    features::telemetry::CountCall(features::telemetry::Hook::LockCursor);
     if (!features::GetConfig().menuOpen) {
         originalLockCursor(thisPtr);
         return;

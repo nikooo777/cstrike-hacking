@@ -56,7 +56,13 @@ set(NIKOOO777_SOURCES
     Nikooo777/features/menu.cpp
     Nikooo777/features/norecoil.cpp
     Nikooo777/features/perfect_nospread.cpp
+    Nikooo777/features/telemetry.cpp
     Nikooo777/features/triggerbot.cpp
+
+    Nikooo777/ui/menu_content.cpp
+    Nikooo777/ui/theme.cpp
+    Nikooo777/ui/wheel.cpp
+    Nikooo777/ui/wheel_geometry.cpp
 
     Nikooo777/hooks/create_move.cpp
     Nikooo777/hooks/client_fire_bullets.cpp
@@ -143,4 +149,32 @@ if (BUILD_TESTING)
         ${CMAKE_SOURCE_DIR}/Nikooo777
     )
     add_test(NAME projection COMMAND projection_tests)
+
+    add_executable(wheel_tests
+        tests/wheel_tests.cpp
+        Nikooo777/ui/wheel_geometry.cpp
+    )
+    target_include_directories(wheel_tests PRIVATE
+        ${CMAKE_SOURCE_DIR}/Nikooo777
+    )
+    add_test(NAME wheel COMMAND wheel_tests)
+
+    # Offline renderer for the menu wheel (aidocs/007); not a test.
+    add_executable(wheel_preview
+        tools/wheel_preview/main.cpp
+        tools/wheel_preview/raster.cpp
+        Nikooo777/ui/menu_content.cpp
+        Nikooo777/ui/theme.cpp
+        Nikooo777/ui/wheel.cpp
+        Nikooo777/ui/wheel_geometry.cpp
+        imgui/imgui.cpp
+        imgui/imgui_draw.cpp
+        imgui/imgui_tables.cpp
+        imgui/imgui_widgets.cpp
+    )
+    target_include_directories(wheel_preview PRIVATE
+        ${CMAKE_SOURCE_DIR}/Nikooo777
+        ${CMAKE_SOURCE_DIR}/imgui
+        ${CMAKE_SOURCE_DIR}/tools/wheel_preview
+    )
 endif()

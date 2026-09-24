@@ -3,6 +3,7 @@
 #include "core/arch.h"
 #include "features/config.h"
 #include "features/norecoil.h"
+#include "features/telemetry.h"
 #include "game/entity_list.h"
 #include "game/render_state.h"
 #include "sdk/view_setup.h"
@@ -15,6 +16,7 @@ void __fastcall hkOverrideView(void *thisPtr, void * /*edx*/,
 #else
 void hkOverrideView(void *thisPtr, CViewSetup *viewSetup) {
 #endif
+    features::telemetry::CountCall(features::telemetry::Hook::OverrideView);
     originalOverrideView(thisPtr, viewSetup);
 
     if (viewSetup == nullptr) {

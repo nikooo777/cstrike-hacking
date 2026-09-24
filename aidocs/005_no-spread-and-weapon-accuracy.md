@@ -29,9 +29,8 @@ not validated (section 16).
 | x86 cross-check | Ghidra `/client.dll` (`x86:LE:32:default`, image base `0x10000000`) |
 | x64 language / image base | `x86:LE:64:default` / `0x180000000` |
 
-The similarly named `server.dll` Ghidra import was malformed for this pass. The
-on-disk server binary was checked separately to confirm the same CS polar
-sequence.
+The similarly named `server.dll` Ghidra import is malformed. The on-disk server
+binary was checked separately to confirm the same CS polar sequence.
 
 Module-relative addresses describe the August 2026 x64 build. The 2026-09-20
 update moved this chapter's `client.dll` code by about `-0xE10`. Every
@@ -56,7 +55,7 @@ These names appear in the code, the F1 output, and the sections below.
 | inaccuracy | Radius returned by `GetInaccuracy()` (vtable slot 382). Sampled once per shot. |
 | spread | Radius returned by `GetSpread()` (slot 383). Sampled once per pellet. |
 | penalty | `m_fAccuracyPenalty` at `weapon+0xCB0`. Decays every tick and rises after each shot. |
-| accuracy model | Value of the replicated ConVar `weapon_accuracy_model` (default `2`). Value `1` selects a separate path that is not modeled. Earlier notes called this the "branch". |
+| accuracy model | Value of the replicated ConVar `weapon_accuracy_model` (default `2`). Value `1` selects a separate path that is not modeled. |
 | punch | `m_vecPunchAngle`, the recoil kick at `player+0x127C`. |
 | desired | The angle the player or the aimbot wants the bullet to take. |
 | fire space | Angles as the fire path consumes them: the command angle plus `2*punch`. |
@@ -387,8 +386,7 @@ in an exception guard, and the result must be finite and inside `[0, 5]`.
 ### 5.3 The accuracy-model selector is a replicated ConVar
 
 `GetInaccuracy` starts by testing a selector and takes a separate path when it
-equals `1`. Earlier passes called this "branch 1" and "branch 2". It is the
-`weapon_accuracy_model` ConVar.
+equals `1`. The selector is the `weapon_accuracy_model` ConVar.
 
 `game::ReadAccuracyModel` reads it exactly the way the getter does. It checks
 the getter's prologue bytes, `MOV RAX,[RIP+rel32]` at `+0x06` and
@@ -535,9 +533,8 @@ builds:
 | 2026-09-20 | `client.dll+0x235AD4` | `client.dll+0x5AE280` |
 
 The slot lies inside `.data` and is referenced from about 1,175 places in
-`.text` in both builds, as expected for `gpGlobals`. Earlier notes recorded the
-August slot as `+0x75E280`. Decoding the recovered August binary (chapter 004,
-section 11.1) shows that was a transcription error.
+`.text` in both builds, as expected for `gpGlobals`. The August value comes from
+decoding the recovered August binary (chapter 004, section 11.1).
 
 ### 5.7 Post-shot penalty
 
@@ -946,8 +943,8 @@ from `CViewSetup::angles`, and never writes `m_vecPunchAngle`. Chapter 006
 captures the resulting view for world-to-screen projection. This layer does
 **not** cancel the compensation flicker; that is the return-value split above.
 
-An earlier implementation zeroed the punch around `FrameStageNotify` instead,
-and broke hit accuracy (section 12.6).
+Do not zero the punch around `FrameStageNotify` instead: its stage 5 runs
+simulation, and doing so breaks hit accuracy (section 12.6).
 
 ### 9.5 What each layer cancels
 
@@ -1057,8 +1054,7 @@ client fire-time diag:
 
 This block is the acceptance evidence: `predicted_delta`, the punch
 prediction, the reconstructed fire angle, and the cone offsets must agree with
-the actual call before a build is considered validated. Logs captured before
-the rename print the same value as `branch=`.
+the actual call before a build is considered validated.
 
 ## 12. How the model was validated
 
@@ -1282,7 +1278,7 @@ and runtime checks. The x86 profile keeps `perfect_nospread=false`.
 
 | Item | Status |
 | --- | --- |
-| Weapon resolve and `GetInaccuracy`/`GetSpread` | Implemented with bounds; x64 handle ABI corrected |
+| Weapon resolve and `GetInaccuracy`/`GetSpread` | Implemented with bounds; the x64 handle is passed as a `CBaseHandle` (chapter 004, section 7.1) |
 | Accuracy model (`weapon_accuracy_model`) read | Implemented; model `1` fails closed |
 | Pre-fire accuracy decay | Validated against slot 384 / `client.dll+0x2367D0` |
 | Pre-fire CSS punch decay | Validated against movement slot 15 / `client.dll+0x1F5AE0` |

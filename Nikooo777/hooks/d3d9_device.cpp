@@ -1,8 +1,13 @@
 #include "hooks/d3d9_device.h"
 
+#include <cstddef>
+
 namespace hooks {
 
 namespace {
+
+constexpr std::size_t kResetVtableIndex = 16;
+constexpr std::size_t kResetExVtableIndex = 132;
 
 HWND g_window = nullptr;
 IDirect3D9 *g_pD3D = nullptr;
@@ -74,6 +79,41 @@ void CleanupDummyD3D() {
         g_pD3D->Release();
         g_pD3D = nullptr;
     }
+}
+
+D3D9ExSlots GetD3D9ExSlots() {
+    D3D9ExSlots slots;
+    HMODULE d3d9 = GetModuleHandleA("d3d9.dll");
+    if (d3d9 == nullptr) {
+        return slots;
+    }
+
+    using CreateD3D9ExFn = HRESULT(WINAPI *)(UINT, IDirect3D9Ex **);
+    const auto create = reinterpret_cast<CreateD3D9ExFn>(
+        GetProcAddress(d3d9, "Direct3DCreate9Ex"));
+    IDirect3D9Ex *d3d = nullptr;
+    if (create == nullptr || FAILED(create(D3D_SDK_VERSION, &d3d)) ||
+        d3d == nullptr) {
+        return slots;
+    }
+
+    D3DPRESENT_PARAMETERS parameters = {};
+    parameters.SwapEffect = D3DSWAPEFFECT_DISCARD;
+    parameters.hDeviceWindow = GetProcessWindow();
+    parameters.Windowed = TRUE;
+    IDirect3DDevice9Ex *device = nullptr;
+    if (SUCCEEDED(d3d->CreateDeviceEx(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL,
+                                      parameters.hDeviceWindow,
+                                      D3DCREATE_HARDWARE_VERTEXPROCESSING,
+                                      &parameters, nullptr, &device)) &&
+        device != nullptr) {
+        void **vtable = *reinterpret_cast<void ***>(device);
+        slots.reset = vtable[kResetVtableIndex];
+        slots.resetEx = vtable[kResetExVtableIndex];
+        device->Release();
+    }
+    d3d->Release();
+    return slots;
 }
 
 } // namespace hooks
